@@ -6,7 +6,6 @@
 from sqlalchemy.orm import Session
 from app.models.CV_entity import CVEntity
 from app.models.JD_entity import JDEntity
-from app.models.missing_entity import MissingEntity
 
 # Saves extracted CV entities for a given user.
 def save_cv_entities(db: Session, user_id: int, entity_list: list):
