@@ -62,19 +62,22 @@ TECH_KEYWORDS = [
 
 QUALIFICATION_KEYWORDS = [
     "degree", "bachelor", "masters", "diploma", "certificate",
-    "certification", "msc", "bsc", "microsoft certified", "aws certified",
-    "cisa"
+    "certification", "bsc", "microsoft certified", "aws certified",
+    "cisa" "ielts"
 ]
 
 SOFT_SKILLS = [
-    "communication", "teamwork", "presentation", "leadership",
+    "communication", "teamwork", "presentation", "presentation skill", "leadership",
     "time management", "problem solving", "critical thinking",
     "adaptability", "creativity", "work ethic", "interpersonal skills",
     "conflict resolution", "empathy", "collaboration", "decision making",
     "organization", "attention to detail", "multitasking", "stress management",
     "negotiation", "networking", "public speaking", "active listening",
     "flexibility", "patience", "positivity", "self-motivation",
-    "dependability", "initiative", "responsibility"
+    "dependability", "initiative", "responsibility", "leader",
+    "team player", "fast learner", "adaptable", "creative",
+    "problem solver", "detail-oriented", "organized", "efficient", 
+    "analytical", "interpersonal skills"
 ]
 
 EXPERIENCE_PATTERNS = [
