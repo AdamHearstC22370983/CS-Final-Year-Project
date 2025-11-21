@@ -1,7 +1,5 @@
 # This is the Database Connection file (db.py).
 # It handles the connection between FastAPI and the PostgreSQL database.
-
-#Using SQLAlchemy it creates the engine, session maker, and base class for ORM models.
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -17,11 +15,10 @@ DATABASE_URL = (
     f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
 
-
 # Create SQLAlchemy engine
 engine = create_engine(
     DATABASE_URL,
-    echo=True  # Set to False in production. True prints SQL queries to terminal.
+    echo=True  # Set to False in production
 )
 
 # Create session maker for DB sessions
@@ -34,12 +31,15 @@ SessionLocal = sessionmaker(
 # Base class for ORM models
 Base = declarative_base()
 
-# Dependency for getting DB session in routes
+# Dependency for FastAPI routes
 def get_db():
-#Generates a database session for use inside FastAPI routes.
-#FastAPI will automatically open/close the session during requests.
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+# Auto-create tables (development only)
+# Import models here ONLY after Base is defined
+from app.models import user, CV_entity, JD_entity, missing_entity, gap_snapshot
+Base.metadata.create_all(bind=engine)
