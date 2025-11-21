@@ -1,7 +1,5 @@
 # user.py
-
-# Authentication-ready User model.
-# Users require:
+# User requires the following fields:
 # - username
 # - email
 # - hashed password
