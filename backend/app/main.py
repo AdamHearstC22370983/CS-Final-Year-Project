@@ -1,9 +1,5 @@
 # Skillgap Backend - FastAPI Starter
-# This file initializes the FastAPI application and sets up the first two endpoints.
-# These endpoints allow the user to upload:
-# CV (PDF/DOCX)
-# Job Description (PDF/DOCX)
-
+# This file initializes the FastAPI application and sets up various endpoint for unit and integration testing.
 from fastapi import FastAPI, Depends, UploadFile, File
 from sqlalchemy import text
 from app.models.db import get_db
@@ -12,7 +8,6 @@ from app.models.db import Base, engine
 from app.models import user
 from app.models import CV_entity
 from app.models import JD_entity
-from app.models import missing_entity
 # imports used for text extraction
 from app.services.text_extraction import extract_text_from_upload
 from app.services.entity_extraction import extract_entities
@@ -24,6 +19,10 @@ from app.models.user import User
 from app.utils.security import hash_password
 # importing a Pydantic schema for user registration
 from app.schemas.user_schema import UserCreate
+# imports for gap analysis
+from app.services.gap_analysis import compute_missing_entities
+# import for gap snapshot
+from app.models.gap_snapshot import GapSnapshot
 
 # Visit: http://127.0.0.1:8000/db-test for database connection test
 # Visit: http://127.0.0.1:8000/docs for automatic API docs (Swagger UI)
@@ -183,3 +182,50 @@ async def save_jd_entities_endpoint(
         "entities": entity_list
     }
 
+# endpoint to compute and store gap analysis
+@app.post("/compute-gap")
+async def compute_gap(user_id: int, db=Depends(get_db)):
+    # Ensure the user exists
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail=f"User with id {user_id} does not exist")
+    # Compute the missing entities
+    missing = compute_missing_entities(db, user_id)
+
+    # Store snapshot in DB
+    snapshot = GapSnapshot(
+        user_id=user_id,
+        missing_entities=missing  # this is a Python list
+    )
+    # Save to DB, commit, and refresh to get the ID
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+    # Return the result
+    return {
+        "user_id": user_id,
+        "missing_entities": missing,
+        "count": len(missing),
+        "snapshot_id": snapshot.id
+    }
+
+# endpoint to retrieve missing entities for a user via a snapshot
+@app.get("/missing-entities")
+async def get_missing_entities(user_id: int, db=Depends(get_db)):
+    snapshot = (
+        db.query(GapSnapshot)
+        .filter(GapSnapshot.user_id == user_id)
+        .order_by(GapSnapshot.created_at.desc())
+        .first()
+    )
+    # If no snapshot found, return empty list
+    if not snapshot:
+        return {"user_id": user_id, "missing_entities": [], "count": 0}
+    # Return the missing entities from the latest snapshot
+    return {
+        "user_id": user_id,
+        "missing_entities": snapshot.missing_entities,
+        "count": len(snapshot.missing_entities),
+        "snapshot_id": snapshot.id,
+        "created_at": snapshot.created_at
+    }
