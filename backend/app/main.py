@@ -3,7 +3,6 @@
 # These endpoints allow the user to upload:
 # CV (PDF/DOCX)
 # Job Description (PDF/DOCX)
-# For now, the endpoints simply return file information.
 
 from fastapi import FastAPI, Depends, UploadFile, File
 from sqlalchemy import text
@@ -183,3 +182,4 @@ async def save_jd_entities_endpoint(
         "saved": result,
         "entities": entity_list
     }
+
