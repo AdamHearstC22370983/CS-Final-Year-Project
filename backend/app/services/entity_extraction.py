@@ -1,5 +1,4 @@
 # entity_extraction.py
-
 # This module performs:
 # Basic NLP preprocessing
 # Rule-based entity extraction
@@ -22,73 +21,127 @@ def preprocess_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     return text
 
-
-# Below are simple keyword lists and patterns for rule-based extraction.
+# Below are keyword lists and patterns for rule-based extraction.
 # In a production system, these would be more comprehensive or replaced with ML models.
 # I used Copilot to help add more keywords to the list but I wish to use an API key here to extract from ESCO directly.
 TECH_KEYWORDS = [
-    "python", "java", "javascript", "c#", "c++", "sql", "html", "css",
-    "react", "node", "docker", "kubernetes", "linux", "git", "aws",
-    "azure", "gcp", "tensorflow", "pytorch", "postgresql", "mongodb",
-    "ruby", "php", "swift", "go", "typescript", "django", "flask",
-    "spring", "angular", "vue", "rest", "graphql", "api", "microservices",
-    "agile", "scrum", "devops", "ci/cd", "jira", "confluence", "jenkins",
-    "ansible", "terraform", "helm", "bash", "powershell", "selenium",
-    "jupyter", "notebook", "data science", "machine learning", "deep learning",
-    "artificial intelligence", "nlp", "computer vision", "big data", "hadoop", "spark",
-    "etl", "data analysis", "data visualization", "excel", "tableau", "power bi", "qlikview",
-    "matlab", "r programming", "sas", "stata", "scala", "haskell", "rust", "cobol", "fortran",
-    "assembly", "unity", "unreal engine", "blockchain", "cryptography", "cybersecurity", "penetration testing",
-    "networking", "tcp/ip", "dns", "dhcp", "firewalls", "vpn", "siem", "incident response",
-    "compliance", "gdpr", "iso27001", "itil", "project management", "business analysis", "ux/ui design",
-    "waterfall methodology", "couchdb", "firebase", "aws lambda", "azure functions", "gcp cloud functions",
-    "serverless", "edge computing", "iot", "raspberry pi", "arduino", "robotics", "automation",
-    "virtualization", "vmware", "hyper-v", "citrix", "cloud computing", "saas", "paas", "iaas",
-    "crm", "erp", "sap", "oracle", "salesforce", "slack", "trello",
-    "fme", "data transformation", "arcgis", "qgis", "geospatial", "gps", "remote sensing", "cartography",
-    "autocad", "revit", "solidworks", "3d modeling", "bim", "building information modeling",
-    "project scheduling", "cloud storage", "dropbox", "google drive", "one drive", "oop", "functional programming",
-    "restful services", "web development", "mobile development", "responsive design", "cross-platform development",
-    "performance optimization", "scalability", "load balancing", "high availability", "disaster recovery",
-    "monitoring", "logging", "alerting", "prometheus", "grafana", "elk stack", "kibana", "logstash", "kotlin",
-    "flutter", "react native", "xamarin", "mobile apps", "app development", "game development",
-    "augumented reality", "virtual reality", "vr", "ar", "3d graphics", "opengl", "directx", "scrum master",
-    "software architecture", "design patterns", "uml", "system design", "code review", "unit testing", "integration testing",
-    "test driven development", "bdd", "junit", "pytest", "mocha", "chai", "cypress", "github", "gitlab", "bitbucket", "version control",
-    "sorting algorithms", "data structures", "linked lists", "trees", "graphs", "hash tables", "queues", "stacks", "algorithms", "complexity analysis",
-    "continuous integration", "continuous deployment", "infrastructure as code", "iac", "configuration management", "openai", "gpt-3", "chatgpt", "dall-e",
-    "machine translation", "speech recognition", "computer graphics", "image processing", "signal processing", "quantum computing"
+    # Core programming
+    "python", "java", "javascript", "typescript", "c# programming", "c++ programming", "c programming", 
+    "go", "rust", "scala", "kotlin", "swift", "dart", "php", "ruby",
+    "sql", "nosql", "bash", "powershell", "shell scripting",
+    # Web + mobile
+    "html", "css", "react", "nextjs", "angular", "vue", "svelte",
+    "node", "express", "django", "flask", "fastapi", "spring", "laravel",
+    "react native", "flutter", "xamarin", "kivy", "mobile development",
+    # Databases & data engineering
+    "postgresql", "mysql", "sqlite", "oracle", "mongodb", "couchdb",
+    "redis", "elasticsearch", "cassandra",
+    "data engineering", "data pipeline", "etl", "elt",
+    "airflow", "dbt", "snowflake", "bigquery", "redshift",
+    # Machine Learning + AI
+    "machine learning", "deep learning", "artificial intelligence",
+    "data science", "nlp", "computer vision", "transformers",
+    "llm", "openai", "chatgpt", "gpt", "tensorflow", "keras", "pytorch",
+    "scikit-learn", "huggingface", "bert", "yolo", "lstm",
+    "autoencoders", "gan", "xgboost", "lightgbm",
+    # Data analytics & visualisation
+    "data analysis", "data mining", "data cleaning",
+    "tableau", "power bi", "qlik", "microsoft excel", "microsoft databases",
+    "pandas", "numpy", "matplotlib", "seaborn", "statistics", "sql analytics",
+    "spark streaming", "kinesis", "flink", "looker", "mode analytics",
+    # Cloud computing
+    "aws", "azure", "gcp", "cloud computing", "serverless",
+    "aws lambda", "azure functions", "cloud functions",
+    "saas", "paas", "iaas",
+    #Cybersecurity/ Cloud & DevOps
+    "burp suite", "wireshark", "nmap", "owasp", "metasploit",
+    "cloudtrail", "cloudwatch", "aws ec2", "aws s3", "aws rds",
+    "kms", "iam", "azure ad", "azure devops",
+    # DevOps, CI/CD, and automation
+    "docker", "kubernetes", "containerisation", "devops",
+    "ci/cd", "jenkins", "github", "github actions", "gitlab ci",
+    "ansible", "terraform", "helm", "prometheus", "grafana",
+    "infrastructure as code", "iac",
+    # Networking + security
+    "cybersecurity", "penetration testing", "ceh", "network security",
+    "tcp/ip", "vpn", "firewalls", "siem", "splunk",
+    "incident response", "forensics", "encryption", "cryptography",
+    "iso 27001", "nist",
+    # Software engineering & architecture
+    "microservices", "rest", "graphql", "api", "system design",
+    "uml", "design patterns", "object oriented programming", "functional programming",
+    "unit testing", "tdd", "bdd", "integration testing",
+    # Cloud-native + distributed systems
+    "event-driven architecture", "kafka", "rabbitmq", "pubsub",
+    "grpc", "consul", "service mesh", "envoy", "istio",
+    # GIS / Geospatial
+    "fme", "arcgis", "qgis", "geospatial", "remote sensing",
+    "cartography", "gps", "coordinate systems", "postgis",
+    "lidar", "geoprocessing", "spatial analysis", "geocoding", 
+    # Robotics, hardware, IoT
+    "robotics", "arduino", "raspberry pi", "embedded systems",
+    "iot", "edge computing",
+    # Virtualisation
+    "virtualization", "vmware", "hyper-v", "docker swarm",
+    # XR / 3D / Game Dev
+    "unity", "unreal", "3d modeling", "opengl", "directx",
+    "augmented reality", "virtual reality", "vr", "ar",
+    #Software Quality & Testing
+    "selenium", "playwright", "postman", "cucumber",
+    # Scientific & HPC
+    "matlab", "r", "stata", "fortran", "cobol",
+    "quantum computing", "parallel computing"
 ]
 
 QUALIFICATION_KEYWORDS = [
-    "degree", "bachelor", "masters", "diploma", "certificate",
-    "certification", "bsc", "microsoft certified", "aws certified",
-    "cisa" "ielts"
+    "degree", "bachelor", "diploma", "professional certificate",
+    "certification", "bsc", "higher diploma",
+    # General certs
+    "ielts", "edX certificate", "coursera certificate", "udemy certificate",
+    "pluralsight certificate", "linkedin learning certificate", "bootcamp",
+    # Cloud certs
+    "aws certified", "azure certified", "gcp certified",
+    "aws cloud practitioner", "aws solutions architect",
+    "azure fundamentals", "azure administrator",
+    "gcp associate engineer",
+    # Cybersecurity certs
+    "cisa", "ceh", "comptia", "security+", "network+",
+    "cybersecurity certificate",
+    # Data + analytics certs
+    "google data analytics", "microsoft certified",
+    "power bi certification", "tableau certification",
+    # Vendor certs
+    "oracle certified", "red hat certified", "cisco certified",
 ]
 
 SOFT_SKILLS = [
-    "communication", "teamwork", "presentation", "presentation skill", "leadership",
-    "time management", "problem solving", "critical thinking",
-    "adaptability", "creativity", "work ethic", "interpersonal skills",
-    "conflict resolution", "empathy", "collaboration", "decision making",
-    "organization", "attention to detail", "multitasking", "stress management",
-    "negotiation", "networking", "public speaking", "active listening",
-    "flexibility", "patience", "positivity", "self-motivation",
-    "dependability", "initiative", "responsibility", "leader",
-    "team player", "fast learner", "adaptable", "creative",
-    "problem solver", "detail-oriented", "organized", "efficient", 
-    "analytical", "interpersonal skills"
+    # Core communication
+    "communication skills", "public speaking skills", "presentation", "presentation skills",
+    "active listening skills", "negotiation skills", "interpersonal skills",
+    # Collaboration
+    "teamwork skills", "team player", "collaboration", "leadership skills",
+    "facilitation", "mentoring experience", "coaching experience",
+    # Work behaviour
+    "time management skills", "organization skills", "attention to detail",
+    "multitasking", "responsibility", "initiative", "work ethic",
+    "dependability", "self-motivation",
+    # Thinking skills
+    "problem solving skills", "critical thinking skills", "analytical thinking skills",
+    "decision making", "creativity",
+    # Adaptability skills
+    "adaptability", "flexibility", "stress management",
+    # Interview-related competencies
+    "interview skills", "interviewing", "self-presentation",
+    "confidence", "professionalism",
+    # Business communication
+    "stakeholder management", "written communication",
+    "report writing", "stakeholder communication", "client interaction",
+    "meeting facilitation"
 ]
 
 EXPERIENCE_PATTERNS = [
     r"\b[0-9]+ ?\+? years? experience\b",
     r"\bexperience with\b",
-    r"\bused\b"
-    r"\bworked on\b",
-    r"\bworked with\b"
-    r"\bfamiliar with\b",
-    r"\bproficient in\b",
-    r"\bexpert in\b"
 ]
 
 def extract_rule_based_entities(text: str) -> list:
