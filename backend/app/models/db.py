@@ -41,5 +41,10 @@ def get_db():
 
 # Auto-create tables (development only)
 # Import models here ONLY after Base is defined
-from app.models import user, CV_entity, JD_entity, missing_entity, gap_snapshot
+from app.models import user 
+from app.models import CV_entity 
+from app.models import JD_entity 
+from app.models import missing_entity 
+from app.models import gap_snapshot
+from app.models import normalised_entity
 Base.metadata.create_all(bind=engine)
