@@ -6,8 +6,6 @@ from app.models.db import get_db
 from app.models.db import Base, engine
 # now to import the db models so that they are registered with SQLAlchemy
 from app.models import user
-from app.models import CV_entity
-from app.models import JD_entity
 # imports used for text extraction
 from app.services.text_extraction import extract_text_from_upload
 from app.services.entity_extraction import extract_entities
@@ -23,7 +21,11 @@ from app.schemas.user_schema import UserCreate
 from app.services.gap_analysis import compute_missing_entities
 # import for gap snapshot
 from app.models.gap_snapshot import GapSnapshot
-
+# import for ESCO normalisation
+from app.services.ESCO.esco_normaliser import normalise_entity
+from app.models.normalised_entity import NormalisedEntity
+from app.models.CV_entity import CVEntity
+from app.models.JD_entity import JDEntity
 # Visit: http://127.0.0.1:8000/db-test for database connection test
 # Visit: http://127.0.0.1:8000/docs for automatic API docs (Swagger UI)
 
@@ -228,4 +230,58 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
         "count": len(snapshot.missing_entities),
         "snapshot_id": snapshot.id,
         "created_at": snapshot.created_at
+    }
+# endpoint to normalise entities via ESCO
+@app.post("/normalise-entities")
+async def normalise_entities(user_id: int, db=Depends(get_db)):
+    # Remove all previous records for this user before new fetching
+    db.query(NormalisedEntity).filter(
+        NormalisedEntity.user_id == user_id
+    ).delete()
+    db.commit()
+
+    # Fetch CV + JD entities
+    cv_entities = db.query(CVEntity.entity_name).filter(
+        CVEntity.user_id == user_id
+    ).all()
+    jd_entities = db.query(JDEntity.entity_name).all()
+
+    # raw_entities = [("Java", "java"), ("Python", "python"), ...]
+    raw_entities = [
+        (x[0], x[0].strip().lower()) for x in cv_entities
+    ] + [
+        (x[0], x[0].strip().lower()) for x in jd_entities
+    ]
+
+    # Deduplicate using lowercase, but preserve original case
+    lower_to_original = {}
+    for orig, low in raw_entities:
+        if low not in lower_to_original:
+            lower_to_original[low] = orig
+
+    unique_original_entities = list(lower_to_original.values())
+
+    normalised_records = []
+
+    # Normalise each unique entity
+    for original_entity in unique_original_entities:
+        result = normalise_entity(original_entity)
+        # Create NormalisedEntity record
+        entry = NormalisedEntity(
+            user_id=user_id,
+            original=result["original"],
+            normalised=result["normalised"],
+            uri=result["uri"],
+            source=result["source"],
+            entity_type=result["type"]
+        )
+        # Save to DB
+        db.add(entry)
+        normalised_records.append(result)
+    db.commit()
+    # Return all normalised records
+    return {
+        "user_id": user_id,
+        "normalised_entities": normalised_records,
+        "count": len(normalised_records)
     }
