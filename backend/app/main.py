@@ -26,6 +26,8 @@ from app.services.ESCO.esco_normaliser import normalise_entity
 from app.models.normalised_entity import NormalisedEntity
 from app.models.CV_entity import CVEntity
 from app.models.JD_entity import JDEntity
+# imports for course recommendation
+from app.services.recommender.course_recommender import COURSE_DB
 # Visit: http://127.0.0.1:8000/db-test for database connection test
 # Visit: http://127.0.0.1:8000/docs for automatic API docs (Swagger UI)
 
@@ -196,8 +198,8 @@ async def compute_gap(user_id: int, db=Depends(get_db)):
 
     # Store snapshot in DB
     snapshot = GapSnapshot(
-        user_id=user_id,
-        missing_entities=missing  # this is a Python list
+        user_id = user_id,
+        missing_entities = missing  # this is a Python list
     )
     # Save to DB, commit, and refresh to get the ID
     db.add(snapshot)
@@ -284,4 +286,36 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
         "user_id": user_id,
         "normalised_entities": normalised_records,
         "count": len(normalised_records)
+    }
+# endpoint to recommend courses based off of the most recent skill gap snapshot
+@app.get("/recommend-courses")
+async def recommend_courses(user_id: int, db=Depends(get_db)):
+# Fetch most recent skill gap snapshot for this user
+    snapshot = (
+        db.query(GapSnapshot)
+        .filter(GapSnapshot.user_id == user_id)
+        .order_by(GapSnapshot.created_at.desc())
+        .first()
+    )
+    # If no snapshot is found, return an error message
+    if not snapshot:
+        return {"error": "No gap analysis found. Complete a skill gap test first."}
+    missing = snapshot.missing_entities   # list of skill names (strings)
+
+    # Load static course database (JSON)
+    recommendations = {}
+
+    # Match only missing skills to JSON keys
+    for skill in missing:
+        key = skill.lower()   # ensure lowercase for matching
+
+        if key in COURSE_DB:
+            # Add course list to recommendations output
+            recommendations[skill] = COURSE_DB[key]
+    # Return formatted response
+    return {
+        "user_id": user_id,
+        "missing_entities": missing,
+        "recommendations": recommendations,
+        "total_skills_covered": len(recommendations)
     }
