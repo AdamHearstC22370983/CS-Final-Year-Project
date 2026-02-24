@@ -1,219 +1,173 @@
-# Skillgap Backend - FastAPI Starter
-# This file initializes the FastAPI application and sets up various endpoint for unit and integration testing.
-from fastapi import FastAPI, Depends, UploadFile, File
+# Skillgap Backend - FastAPI
+# Main application entrypoint (DB-backed course catalog + CV/JD parsing pipeline)
+
+from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
 from sqlalchemy import text
-from app.models.db import get_db
-from app.models.db import Base, engine
-# now to import the db models so that they are registered with SQLAlchemy
-from app.models import user
-# imports used for text extraction
-from app.services.text_extraction import extract_text_from_upload
-from app.services.entity_extraction import extract_entities
-# import used to save entities
-from app.services.entity_storage import save_cv_entities, save_jd_entities
-# imports used registration and password hashing
-from fastapi import HTTPException
+from pathlib import Path
+
+from app.models.db import get_db, Base, engine
+
+# Import DB models to ensure SQLAlchemy registers them for create_all()
 from app.models.user import User
-from app.utils.security import hash_password
-# importing a Pydantic schema for user registration
-from app.schemas.user_schema import UserCreate
-# imports for gap analysis
-from app.services.gap_analysis import compute_missing_entities
-# import for gap snapshot
-from app.models.gap_snapshot import GapSnapshot
-# import for ESCO normalisation
-from app.services.ESCO.esco_normaliser import normalise_entity
-from app.models.normalised_entity import NormalisedEntity
 from app.models.CV_entity import CVEntity
 from app.models.JD_entity import JDEntity
-# imports for course recommendation
-from app.services.recommender.course_recommender import COURSE_DB
-# Visit: http://127.0.0.1:8000/db-test for database connection test
-# Visit: http://127.0.0.1:8000/docs for automatic API docs (Swagger UI)
+from app.models.gap_snapshot import GapSnapshot
+from app.models.normalised_entity import NormalisedEntity
+from app.models.course import Course
 
-# creates the main FastAPI application instance
+# Services
+from app.utils.security import hash_password
+from app.schemas.user_schema import UserCreate
+
+from app.services.text_extraction import extract_text_from_upload
+from app.services.entity_extraction import extract_entities
+from app.services.entity_storage import save_cv_entities, save_jd_entities
+from app.services.gap_analysis import compute_missing_entities
+from app.services.ESCO.esco_normaliser import normalise_entity
+
+# Catalog ingestion (admin task, not runtime)
+from app.services.catalog.catalog_ingest import ingest_catalog
+
 app = FastAPI(
     title="Skillgap Backend API",
-    description="API for uploading CV parsing, Job Description parsing, and entity extraction & recommendation.",
-    version="0.1.0"
+    description="API for CV/JD parsing, entity extraction, gap analysis, ESCO normalisation, and DB-backed course recommendations.",
+    version="0.1.0",
 )
-# Auto-create tables in PostgreSQL (Dbeaver) (development only)
+
+# Dev-only: auto-create tables
 Base.metadata.create_all(bind=engine)
 
-# Root endpoint to check if the API is running
 @app.get("/")
 def home():
     return {"message": "Skillgap backend API is running"}
-# Can test the endpoint by visiting http://127.0.0.1:8000
-# It returns the above message in JSON format
 
-# endpoint for user registration (POST)
+
+@app.get("/db-test")
+def test_database(db=Depends(get_db)):
+    result = db.execute(text("SELECT 'Database connection OK' AS status;"))
+    return {"database": result.fetchone()[0]}
+
+
+# ---------------------------
+# Auth (registration only)
+# ---------------------------
 @app.post("/register")
 async def register_user(payload: UserCreate, db=Depends(get_db)):
-# Registers a new user using a JSON body.
-# Fixes the bcrypt >72 bytes issue and prevents URL encoding bugs.
-# Password is hashed for security.
-# Plan to create authentication endpoints later but not needed in FR.
-    
-    # Check for existing username
     existing_username = db.query(User).filter(User.username == payload.username).first()
     if existing_username:
         raise HTTPException(status_code=400, detail="Username already taken")
 
-    # Check for existing email
     existing_email = db.query(User).filter(User.email == payload.email).first()
     if existing_email:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Hash password safely
     hashed = hash_password(payload.password)
+
     new_user = User(
         username=payload.username,
         email=payload.email,
-        hashed_password=hashed
+        hashed_password=hashed,
     )
-    # Save new user to DB
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    # Return success message
+
     return {
         "message": "User created successfully",
         "user_id": new_user.id,
-        "username": new_user.username
+        "username": new_user.username,
     }
-# Upload CV endpoint (POST)
+
+
+# ---------------------------
+# Upload + Extraction
+# ---------------------------
 @app.post("/upload-cv")
 async def upload_cv(file: UploadFile = File(...)):
-# Accepts a CV file (PDF or DOCx).
-# The UploadFile object gives access to: filename, filesize, content type and a status.
     contents = await file.read()
     return {
-        "filename": file.filename, 
-        "filesize": len(contents), 
-        "content_type": file.content_type, 
-        "status": "CV uploaded successfully"
-        }
+        "filename": file.filename,
+        "filesize": len(contents),
+        "content_type": file.content_type,
+        "status": "CV uploaded successfully",
+    }
 
-# Upload Job Description Endpoint (POST)
+
 @app.post("/upload-jd")
 async def upload_jd(file: UploadFile = File(...)):
-# Accepts a Job Description file (PDF or DOCx).
     contents = await file.read()
     return {
-        "filename": file.filename, 
-        "filesize": len(contents), 
-        "content_type": file.content_type, 
-        "status": "Job Description uploaded successfully"
-        }
+        "filename": file.filename,
+        "filesize": len(contents),
+        "content_type": file.content_type,
+        "status": "Job Description uploaded successfully",
+    }
 
-# new endpoint for database connection test
-@app.get("/db-test")
-def test_database(db=Depends(get_db)):
-# Tests connection to the PostgreSQL DB.
-    result = db.execute(text("SELECT 'Database connection OK' AS status;"))
-    return {"database": result.fetchone()[0]}
 
-# endpioint to extract text from uploaded file
 @app.post("/extract-text")
 async def extract_text(file: UploadFile = File(...)):
-# Accepts a CV/Job Description file (PDF or DOCx).
-# Extracts and cleans text using the text extraction service.
     contents = await file.read()
     cleaned_text = extract_text_from_upload(file, contents)
-    # Returns the cleaned text along with the original filename.
-    return { 
-        "filename": file.filename, 
-        "text": cleaned_text 
-        }
-# endpoint to extract entities from text
+    return {"filename": file.filename, "text": cleaned_text}
+
+
 @app.post("/extract-entities")
 async def extract_entities_endpoint(file: UploadFile = File(...)):
-    # Upload a CV or JD, extract text, and then extract entities from that text.
     contents = await file.read()
-    # extract and clean text
     cleaned_text = extract_text_from_upload(file, contents)
-
-    # extract rule-based entities
     extraction_result = extract_entities(cleaned_text)
+    return {"filename": file.filename, "entities": extraction_result}
 
-    return{
-        "filename": file.filename,
-        "entities": extraction_result
-    }
 
-# endpoints to save CV entities
+# ---------------------------
+# Entity Storage
+# ---------------------------
 @app.post("/save-cv-entities")
-async def save_cv_entities_endpoint(
-    user_id: int,
-    file: UploadFile = File(...),
-    db=Depends(get_db)
-):    
-    # Upload a CV, extract entities, and save them to the cv_entities table.
+async def save_cv_entities_endpoint(user_id: int, file: UploadFile = File(...), db=Depends(get_db)):
     contents = await file.read()
-    # Extract text
     cleaned_text = extract_text_from_upload(file, contents)
-
-    # Extract entities from text
     extraction = extract_entities(cleaned_text)
     entity_list = extraction["unique_entities"]
 
-    # Save entities to DB
     result = save_cv_entities(db, user_id, entity_list)
-    return {
-        "saved": result,
-        "entities": entity_list
-    }
-# endpoint to save JD entities
-@app.post("/save-jd-entities")
-async def save_jd_entities_endpoint(
-    file: UploadFile = File(...),
-    db=Depends(get_db)
-):
-    # Upload a Job Description, extract entities, and save them to the jd_entities table.
-    contents = await file.read()
-    # Extract text
-    cleaned_text = extract_text_from_upload(file, contents)
+    return {"saved": result, "entities": entity_list}
 
-    # Extract entities from text
+
+@app.post("/save-jd-entities")
+async def save_jd_entities_endpoint(file: UploadFile = File(...), db=Depends(get_db)):
+    contents = await file.read()
+    cleaned_text = extract_text_from_upload(file, contents)
     extraction = extract_entities(cleaned_text)
     entity_list = extraction["unique_entities"]
 
-    # Save entities to DB
     result = save_jd_entities(db, entity_list)
-    return {
-        "saved": result,
-        "entities": entity_list
-    }
+    return {"saved": result, "entities": entity_list}
 
-# endpoint to compute and store gap analysis
+# ---------------------------
+# Gap Analysis + Snapshots
+# ---------------------------
 @app.post("/compute-gap")
 async def compute_gap(user_id: int, db=Depends(get_db)):
-    # Ensure the user exists
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=400, detail=f"User with id {user_id} does not exist")
-    # Compute the missing entities
+
     missing = compute_missing_entities(db, user_id)
 
-    # Store snapshot in DB
-    snapshot = GapSnapshot(
-        user_id = user_id,
-        missing_entities = missing  # this is a Python list
-    )
-    # Save to DB, commit, and refresh to get the ID
+    snapshot = GapSnapshot(user_id=user_id, missing_entities=missing)
     db.add(snapshot)
     db.commit()
     db.refresh(snapshot)
-    # Return the result
+
     return {
         "user_id": user_id,
         "missing_entities": missing,
         "count": len(missing),
-        "snapshot_id": snapshot.id
+        "snapshot_id": snapshot.id,
     }
 
-# endpoint to retrieve missing entities for a user via a snapshot
+
 @app.get("/missing-entities")
 async def get_missing_entities(user_id: int, db=Depends(get_db)):
     snapshot = (
@@ -222,40 +176,32 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
-    # If no snapshot found, return empty list
     if not snapshot:
         return {"user_id": user_id, "missing_entities": [], "count": 0}
-    # Return the missing entities from the latest snapshot
+
     return {
         "user_id": user_id,
         "missing_entities": snapshot.missing_entities,
         "count": len(snapshot.missing_entities),
         "snapshot_id": snapshot.id,
-        "created_at": snapshot.created_at
+        "created_at": snapshot.created_at,
     }
-# endpoint to normalise entities via ESCO
+
+# ---------------------------
+# ESCO Normalisation
+# ---------------------------
 @app.post("/normalise-entities")
 async def normalise_entities(user_id: int, db=Depends(get_db)):
-    # Remove all previous records for this user before new fetching
-    db.query(NormalisedEntity).filter(
-        NormalisedEntity.user_id == user_id
-    ).delete()
+    db.query(NormalisedEntity).filter(NormalisedEntity.user_id == user_id).delete()
     db.commit()
 
-    # Fetch CV + JD entities
-    cv_entities = db.query(CVEntity.entity_name).filter(
-        CVEntity.user_id == user_id
-    ).all()
+    cv_entities = db.query(CVEntity.entity_name).filter(CVEntity.user_id == user_id).all()
     jd_entities = db.query(JDEntity.entity_name).all()
 
-    # raw_entities = [("Java", "java"), ("Python", "python"), ...]
-    raw_entities = [
-        (x[0], x[0].strip().lower()) for x in cv_entities
-    ] + [
+    raw_entities = [(x[0], x[0].strip().lower()) for x in cv_entities] + [
         (x[0], x[0].strip().lower()) for x in jd_entities
     ]
 
-    # Deduplicate using lowercase, but preserve original case
     lower_to_original = {}
     for orig, low in raw_entities:
         if low not in lower_to_original:
@@ -264,58 +210,134 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
     unique_original_entities = list(lower_to_original.values())
 
     normalised_records = []
-
-    # Normalise each unique entity
     for original_entity in unique_original_entities:
         result = normalise_entity(original_entity)
-        # Create NormalisedEntity record
+
         entry = NormalisedEntity(
             user_id=user_id,
             original=result["original"],
             normalised=result["normalised"],
             uri=result["uri"],
             source=result["source"],
-            entity_type=result["type"]
+            entity_type=result["type"],
         )
-        # Save to DB
         db.add(entry)
         normalised_records.append(result)
+
     db.commit()
-    # Return all normalised records
+
     return {
         "user_id": user_id,
         "normalised_entities": normalised_records,
-        "count": len(normalised_records)
+        "count": len(normalised_records),
     }
-# endpoint to recommend courses based off of the most recent skill gap snapshot
+# ---------------------------
+# Catalog (DB-backed)
+# ---------------------------
+@app.post("/catalog/import-local")
+def import_catalog_local(db=Depends(get_db)):
+    base_dir = Path(".")
+    stats = ingest_catalog(
+        db=db,
+        base_dir=base_dir,
+        filename="kaggle_courses.json",
+        truncate_first=True,
+    )
+    return {"message": "Catalog import complete", "stats": {"kaggle_courses.json": stats}}
+
+
+@app.get("/catalog/search")
+def search_catalog(query: str, limit: int = 10, db=Depends(get_db)):
+    q = f"%{query.lower()}%"
+    rows = (
+        db.query(Course)
+        .filter(
+            (Course.course_name.ilike(q)) |
+            (Course.description.ilike(q)) |
+            (Course.provider.ilike(q)) |
+            (Course.organization.ilike(q))
+        )
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "query": query,
+        "count": len(rows),
+        "results": [
+            {
+                "url": r.url,
+                "course_name": r.course_name,
+                "provider": r.provider,
+                "organization": r.organization,
+                "type": r.type,
+                "level": r.level,
+                "subject": r.subject,
+                "Duration": r.duration,
+                "rating": r.rating,
+                "nu_reviews": r.nu_reviews,
+                "enrollments": r.enrollments,
+                "skills": r.skills,
+                "description": r.description,
+            }
+            for r in rows
+        ],
+    }
+# ---------------------------
+# Recommendations (DB-backed)
+# ---------------------------
 @app.get("/recommend-courses")
-async def recommend_courses(user_id: int, db=Depends(get_db)):
-# Fetch most recent skill gap snapshot for this user
+async def recommend_courses(user_id: int, limit_per_skill: int = 5, db=Depends(get_db)):
     snapshot = (
         db.query(GapSnapshot)
         .filter(GapSnapshot.user_id == user_id)
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
-    # If no snapshot is found, return an error message
+
     if not snapshot:
         return {"error": "No gap analysis found. Complete a skill gap test first."}
-    missing = snapshot.missing_entities   # list of skill names (strings)
 
-    # Load static course database (JSON)
+    missing = snapshot.missing_entities
     recommendations = {}
 
-    # Match only missing skills to JSON keys
     for skill in missing:
-        key = skill.lower()   # ensure lowercase for matching
+        like = f"%{skill.lower()}%"
 
-        if key in COURSE_DB:
-            # Add course list to recommendations output
-            recommendations[skill] = COURSE_DB[key]
-    # Return formatted response
+        # Candidate selection: match by skill name in skills JSON, title, or description
+        candidates = (
+            db.query(Course)
+            .filter(
+                (Course.course_name.ilike(like)) |
+                (Course.description.ilike(like)) |
+                (Course.skills.cast(str).ilike(like))
+            )
+            .limit(limit_per_skill)
+            .all()
+        )
+
+        if candidates:
+            recommendations[skill] = [
+                {
+                    "url": c.url,
+                    "course_name": c.course_name,
+                    "provider": c.provider,
+                    "organization": c.organization,
+                    "type": c.type,
+                    "level": c.level,
+                    "subject": c.subject,
+                    "Duration": c.duration,
+                    "rating": c.rating,
+                    "nu_reviews": c.nu_reviews,
+                    "enrollments": c.enrollments,
+                    "skills": c.skills,
+                }
+                for c in candidates
+            ]
+
     return {
         "user_id": user_id,
         "missing_entities": missing,
         "recommendations": recommendations,
-        "total_skills_covered": len(recommendations)
+        "total_skills_covered": len(recommendations),
     }
