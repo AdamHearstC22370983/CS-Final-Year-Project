@@ -1,20 +1,34 @@
+# Web framework
 fastapi
 uvicorn[standard]
 python-multipart
 
+# Database
 sqlalchemy
 psycopg2-binary
 
-bcrypt
+# Validation
+pydantic
+email-validator
+
+# Password hashing
 passlib[bcrypt]
-python-jose[cryptography]
 
-python-dotenv
-
-PyMuPDF
+# Document parsing
 python-docx
-pdfminer.six
+pdfplumber
 
+# NLP
+spacy
+
+# HTTP requests
 requests
 
-pydantic
+# Optional: used by preprocessing / filtering scripts
+ijson
+
+After installing the above requirements, run 
+"python -m spacy download en_core_web_sm" in the python environment.
+
+# Optional: used if TF-IDF / cosine recommender files are enabled
+scikit-learn
