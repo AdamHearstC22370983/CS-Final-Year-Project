@@ -1,6 +1,6 @@
-# Skillgap Backend - FastAPI
+# main.py
+# Skillgap Backend
 # Main application entrypoint (DB-backed course catalog + CV/JD parsing pipeline)
-
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
 from sqlalchemy import text
 from pathlib import Path
@@ -27,6 +27,9 @@ from app.services.ESCO.esco_normaliser import normalise_entity
 
 # Catalog ingestion (admin task, not runtime)
 from app.services.catalog.catalog_ingest import ingest_catalog
+
+# NEW: recommender ranking
+from app.services.recommender.course_ranker import rank_courses_for_missing
 
 app = FastAPI(
     title="Skillgap Backend API",
@@ -78,8 +81,6 @@ async def register_user(payload: UserCreate, db=Depends(get_db)):
         "user_id": new_user.id,
         "username": new_user.username,
     }
-
-
 # ---------------------------
 # Upload + Extraction
 # ---------------------------
@@ -231,6 +232,7 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
         "normalised_entities": normalised_records,
         "count": len(normalised_records),
     }
+
 # ---------------------------
 # Catalog (DB-backed)
 # ---------------------------
@@ -278,66 +280,42 @@ def search_catalog(query: str, limit: int = 10, db=Depends(get_db)):
                 "nu_reviews": r.nu_reviews,
                 "enrollments": r.enrollments,
                 "skills": r.skills,
+                "skills_norm": getattr(r, "skills_norm", None),
                 "description": r.description,
             }
             for r in rows
         ],
     }
+
 # ---------------------------
-# Recommendations (DB-backed)
+# Recommendations (DB-backed, scored)
 # ---------------------------
 @app.get("/recommend-courses")
-async def recommend_courses(user_id: int, limit_per_skill: int = 5, db=Depends(get_db)):
+async def recommend_courses(user_id: int, top_n: int = 10, use_cosine: bool = True, db=Depends(get_db)):
     snapshot = (
         db.query(GapSnapshot)
         .filter(GapSnapshot.user_id == user_id)
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
-
+    # If no snapshot or missing entities, return empty recommendations with message.
     if not snapshot:
         return {"error": "No gap analysis found. Complete a skill gap test first."}
 
-    missing = snapshot.missing_entities
-    recommendations = {}
+    missing = snapshot.missing_entities or []
 
-    for skill in missing:
-        like = f"%{skill.lower()}%"
-
-        # Candidate selection: match by skill name in skills JSON, title, or description
-        candidates = (
-            db.query(Course)
-            .filter(
-                (Course.course_name.ilike(like)) |
-                (Course.description.ilike(like)) |
-                (Course.skills.cast(str).ilike(like))
-            )
-            .limit(limit_per_skill)
-            .all()
-        )
-
-        if candidates:
-            recommendations[skill] = [
-                {
-                    "url": c.url,
-                    "course_name": c.course_name,
-                    "provider": c.provider,
-                    "organization": c.organization,
-                    "type": c.type,
-                    "level": c.level,
-                    "subject": c.subject,
-                    "Duration": c.duration,
-                    "rating": c.rating,
-                    "nu_reviews": c.nu_reviews,
-                    "enrollments": c.enrollments,
-                    "skills": c.skills,
-                }
-                for c in candidates
-            ]
-
+    ranked = rank_courses_for_missing(
+        db=db,
+        missing_entities=missing,
+        top_n=top_n,
+        candidate_limit=100,
+        use_cosine=use_cosine,
+    )
     return {
         "user_id": user_id,
         "missing_entities": missing,
-        "recommendations": recommendations,
-        "total_skills_covered": len(recommendations),
+        "missing_count": len(missing),
+        "top_n": top_n,
+        "use_cosine": use_cosine,
+        "recommendations": ranked,
     }
