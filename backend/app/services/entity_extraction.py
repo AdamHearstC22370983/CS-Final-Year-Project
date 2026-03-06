@@ -1,205 +1,145 @@
 # entity_extraction.py
-# This module performs:
-# Basic NLP preprocessing
-# Rule-based entity extraction
-# Produces ESCO-ready entity candidates
+from __future__ import annotations
 
-#This is *not* the final ESCO version.
-#It prepares standardised "entity candidates" for ESCO lookup later.
+import json
 import re
+from pathlib import Path
+from functools import lru_cache
+from typing import Dict, List, Any, Tuple
+
 import spacy
+from spacy.matcher import PhraseMatcher
 
-# Load spaCy English model
-nlp = spacy.load("en_core_web_sm")
 
-# Text preprocessing function
-def preprocess_text(text: str) -> str:
-#    Cleans and normalises text for entity extraction.
-#    make letters lowercase, strip whitespace and remove excessive punctuation
-    text = text.lower()
-    text = text.strip()
-    text = re.sub(r"\s+", " ", text)
-    return text
+# ---- Taxonomy files ----
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+ACTIVE_TAXONOMY_PATH = DATA_DIR / "skill_taxonomy_it_active.json"
+FULL_TAXONOMY_PATH = DATA_DIR / "skill_taxonomy_it.json"
 
-# Below are keyword lists and patterns for rule-based extraction.
-# In a production system, these would be more comprehensive or replaced with ML models.
-# I used Copilot to help add more keywords to the list but I wish to use an API key here to extract from ESCO directly.
-TECH_KEYWORDS = [
-    # Core programming
-    "python", "java", "javascript", "typescript", "c# programming", "c++ programming", "c programming", 
-    "go", "rust", "scala", "kotlin", "swift", "dart", "php", "ruby",
-    "sql", "nosql", "bash", "powershell", "shell scripting",
-    # Web + mobile
-    "html", "css", "react", "nextjs", "angular", "vue", "svelte",
-    "node", "express", "django", "flask", "fastapi", "spring", "laravel",
-    "react native", "flutter", "xamarin", "kivy", "mobile development",
-    # Databases & data engineering
-    "postgresql", "mysql", "sqlite", "oracle", "mongodb", "couchdb",
-    "redis", "elasticsearch", "cassandra",
-    "data engineering", "data pipeline", "etl", "elt",
-    "airflow", "dbt", "snowflake", "bigquery", "redshift",
-    # Machine Learning + AI
-    "machine learning", "deep learning", "artificial intelligence",
-    "data science", "nlp", "computer vision", "transformers",
-    "llm", "openai", "chatgpt", "gpt", "tensorflow", "keras", "pytorch",
-    "scikit-learn", "huggingface", "bert", "yolo", "lstm",
-    "autoencoders", "gan", "xgboost", "lightgbm",
-    # Data analytics & visualisation
-    "data analysis", "data mining", "data cleaning",
-    "tableau", "power bi", "qlik", "microsoft excel", "microsoft databases",
-    "pandas", "numpy", "matplotlib", "seaborn", "statistics", "sql analytics",
-    "spark streaming", "kinesis", "flink", "looker", "mode analytics",
-    # Cloud computing
-    "aws", "azure", "gcp", "cloud computing", "serverless",
-    "aws lambda", "azure functions", "cloud functions",
-    "saas", "paas", "iaas",
-    #Cybersecurity/ Cloud & DevOps
-    "burp suite", "wireshark", "nmap", "owasp", "metasploit",
-    "cloudtrail", "cloudwatch", "aws ec2", "aws s3", "aws rds",
-    "kms", "iam", "azure ad", "azure devops",
-    # DevOps, CI/CD, and automation
-    "docker", "kubernetes", "containerisation", "devops",
-    "ci/cd", "jenkins", "github", "github actions", "gitlab ci",
-    "ansible", "terraform", "helm", "prometheus", "grafana",
-    "infrastructure as code", "iac",
-    # Networking + security
-    "cybersecurity", "penetration testing", "ceh", "network security",
-    "tcp/ip", "vpn", "firewalls", "siem", "splunk",
-    "incident response", "forensics", "encryption", "cryptography",
-    "iso 27001", "nist",
-    # Software engineering & architecture
-    "microservices", "rest", "graphql", "api", "system design",
-    "uml", "design patterns", "object oriented programming", "functional programming",
-    "unit testing", "tdd", "bdd", "integration testing",
-    # Cloud-native + distributed systems
-    "event-driven architecture", "kafka", "rabbitmq", "pubsub",
-    "grpc", "consul", "service mesh", "envoy", "istio",
-    # GIS / Geospatial
-    "fme", "arcgis", "qgis", "geospatial", "remote sensing",
-    "cartography", "gps", "coordinate systems", "postgis",
-    "lidar", "geoprocessing", "spatial analysis", "geocoding", 
-    # Robotics, hardware, IoT
-    "robotics", "arduino", "raspberry pi", "embedded systems",
-    "iot", "edge computing",
-    # Virtualisation
-    "virtualization", "vmware", "hyper-v", "docker swarm",
-    # XR / 3D / Game Dev
-    "unity", "unreal", "3d modeling", "opengl", "directx",
-    "augmented reality", "virtual reality", "vr", "ar",
-    #Software Quality & Testing
-    "selenium", "playwright", "postman", "cucumber",
-    # Scientific & HPC
-    "matlab", "r", "stata", "fortran", "cobol",
-    "quantum computing", "parallel computing"
-]
+# PhraseMatcher doesn't need NER/parser, keep it light and fast.
+_nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger", "lemmatizer"])
 
+# ---- Minimal non-skill extraction (optional MVP) ----
 QUALIFICATION_KEYWORDS = [
     "degree", "bachelor", "diploma", "professional certificate",
-    "certification", "bsc", "higher diploma",
-    # General certs
-    "ielts", "edX certificate", "coursera certificate", "udemy certificate",
-    "pluralsight certificate", "linkedin learning certificate", "bootcamp",
-    # Cloud certs
+    "bsc", "higher diploma",
     "aws certified", "azure certified", "gcp certified",
-    "aws cloud practitioner", "aws solutions architect",
-    "azure fundamentals", "azure administrator",
-    "gcp associate engineer",
-    # Cybersecurity certs
-    "cisa", "ceh", "comptia", "security+", "network+",
-    "cybersecurity certificate",
-    # Data + analytics certs
-    "google data analytics", "microsoft certified",
-    "power bi certification", "tableau certification",
-    # Vendor certs
-    "oracle certified", "red hat certified", "cisco certified",
-]
-
-SOFT_SKILLS = [
-    # Core communication
-    "communication skills", "public speaking skills", "presentation", "presentation skills",
-    "active listening skills", "negotiation skills", "interpersonal skills",
-    # Collaboration
-    "teamwork skills", "team player", "collaboration", "leadership skills",
-    "facilitation", "mentoring experience", "coaching experience",
-    # Work behaviour
-    "time management skills", "organization skills", "attention to detail",
-    "multitasking", "responsibility", "initiative", "work ethic",
-    "dependability", "self-motivation",
-    # Thinking skills
-    "problem solving skills", "critical thinking skills", "analytical thinking skills",
-    "decision making", "creativity",
-    # Adaptability skills
-    "adaptability", "flexibility", "stress management",
-    # Interview-related competencies
-    "interview skills", "interviewing", "self-presentation",
-    "confidence", "professionalism",
-    # Business communication
-    "stakeholder management", "written communication",
-    "report writing", "stakeholder communication", "client interaction",
-    "meeting facilitation"
+    "security+", "network+",
+    "cisco certified", "oracle certified", "red hat certified",
 ]
 
 EXPERIENCE_PATTERNS = [
     r"\b[0-9]+ ?\+? years? experience\b",
+    r"\b[0-9]+ ?\+? years?\b",
     r"\bexperience with\b",
 ]
 
-def extract_rule_based_entities(text: str) -> list:
-#   Extract technical skills, qualifications, and soft skills using pattern matching + keyword checking.
-    entities = []
-    cleaned = preprocess_text(text)
+# ---- Main entity extraction function ----
+def _preprocess_text(text: str) -> str:
+    if not text:
+        return ""
+    text = text.lower().strip()
+    text = re.sub(r"\s+", " ", text)
+    return text
 
-    # Tokenise with spaCy
-    doc = nlp(cleaned)
+# Loads the taxonomy, builds a PhraseMatcher, and extracts entities from text.
+def _load_taxonomy_file() -> Tuple[Path, List[str]]:
+#    Prefer active taxonomy (tightest).
+#    Fall back to full taxonomy if active isn't built yet.
 
-    # Keyword-based extraction
-    for token in doc:
-        if token.text in TECH_KEYWORDS:
-            entities.append({"text": token.text, "type": "technical"})
-        if token.text in SOFT_SKILLS:
-            entities.append({"text": token.text, "type": "soft"})
-        if token.text in QUALIFICATION_KEYWORDS:
-            entities.append({"text": token.text, "type": "qualification"})
+    if ACTIVE_TAXONOMY_PATH.exists():
+        path = ACTIVE_TAXONOMY_PATH
+    else:
+        path = FULL_TAXONOMY_PATH
 
-    # Experience extraction (regex)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"No taxonomy file found. Expected either:\n"
+            f" - {ACTIVE_TAXONOMY_PATH}\n"
+            f" - {FULL_TAXONOMY_PATH}\n"
+            f"Make sure you generated skill_taxonomy_it.json (and optionally the active version)."
+        )
+
+    skills = json.loads(path.read_text(encoding="utf-8"))
+    # Lowercase + unique + longest-first helps overlap behaviour (e.g. 'machine learning' before 'learning')
+    cleaned = sorted({str(s).strip().lower() for s in skills if s and str(s).strip()}, key=len, reverse=True)
+    return path, cleaned
+
+# Manual overrides for common IT skill synonyms, typos, or unnormalisable variants.
+@lru_cache(maxsize=1)
+def _get_taxonomy_and_matcher() -> Tuple[Path, List[str], PhraseMatcher]:
+#    Cached loader for runtime speed.
+#    If you rebuild the active taxonomy and want FastAPI to pick it up,
+#    restart the backend (or clear the cache manually).
+
+    path, skills = _load_taxonomy_file()
+
+    matcher = PhraseMatcher(_nlp.vocab, attr="LOWER")
+    patterns = [_nlp.make_doc(s) for s in skills]
+    matcher.add("ICT_SKILL", patterns)
+
+    return path, skills, matcher
+
+# Extract skills using a simple dictionary lookup via spaCy's PhraseMatcher.
+def _extract_dictionary_skills(text: str) -> List[str]:
+    cleaned = _preprocess_text(text)
+    if not cleaned:
+        return []
+
+    _, _, matcher = _get_taxonomy_and_matcher()
+    doc = _nlp(cleaned)
+    matches = matcher(doc)
+
+    found = set()
+    for _, start, end in matches:
+        span = doc[start:end].text.strip().lower()
+        if span:
+            found.add(span)
+
+    return sorted(found)
+
+# Extract some basic non-skill entities using simple keyword and regex matching.
+def _extract_other_entities(text: str) -> List[Dict[str, str]]:
+    cleaned = _preprocess_text(text)
+    entities: List[Dict[str, str]] = []
+
+    for q in QUALIFICATION_KEYWORDS:
+        if q in cleaned:
+            entities.append({"text": q, "type": "qualification"})
+
     for pattern in EXPERIENCE_PATTERNS:
-        matches = re.findall(pattern, cleaned)
-        for match in matches:
+        for match in re.findall(pattern, cleaned):
             entities.append({"text": match, "type": "experience"})
 
     return entities
 
-# main extraction function
-def extract_entities(cleaned_text: str) -> dict:
-#    High-level extraction function.
-#    Returns a dictionary with:
-#    raw_entities: rule-based raw hits
-#    unique_entities: deduplicated entity list
-#    esco_ready: full normalised list for ESCO API lookup
+def extract_entities(text: str) -> Dict[str, Any]:
+#      - raw_entities: list of {text,type}
+#      - unique_entities: deduped list
+#      - meta: taxonomy source + counts (useful for debugging / report screenshots)
 
-    raw_entities = extract_rule_based_entities(cleaned_text)
+    taxonomy_path, taxonomy_skills, _ = _get_taxonomy_and_matcher()
 
-    # Deduplicate
+    dictionary_skills = _extract_dictionary_skills(text)
+    raw_entities: List[Dict[str, str]] = [{"text": s, "type": "technical"} for s in dictionary_skills]
+
+    raw_entities.extend(_extract_other_entities(text))
+
     seen = set()
-    unique = []
+    unique: List[Dict[str, str]] = []
     for ent in raw_entities:
-        key = ent["text"]
+        key = (ent["text"], ent["type"])
         if key not in seen:
             unique.append(ent)
             seen.add(key)
 
-    # Prepare ESCO-ready format
-    esco_prepared = []
-    for ent in unique:
-        esco_prepared.append({
-            "original": ent["text"],
-            "lookup_term": ent["text"],
-            "type": ent["type"],
-            "ready_for_esco": True
-        })
-
     return {
         "raw_entities": raw_entities,
         "unique_entities": unique,
-        "esco_ready_entities": esco_prepared
+        "meta": {
+            "taxonomy_file": str(taxonomy_path),
+            "taxonomy_skill_count": len(taxonomy_skills),
+            "matched_technical_count": len(dictionary_skills),
+            "unique_entity_count": len(unique),
+        }
     }
