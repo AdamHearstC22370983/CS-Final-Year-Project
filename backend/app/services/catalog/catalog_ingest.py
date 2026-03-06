@@ -334,6 +334,7 @@ def upsert_courses(db: Session, rows: List[Dict[str, Any]], batch_size: int = 10
 
     return {"inserted": inserted, "updated": updated, "skipped": skipped, "total": total}
 
+
 def ingest_catalog(
     db: Session,
     base_dir: Path,
