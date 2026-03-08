@@ -1,9 +1,16 @@
 # main.py
-# Skillgap backend entrypoint
-# FastAPI app for user registration, CV/JD processing, gap analysis, normalization, and recommendations
+# Skillgap backend entry point.
+# This FastAPI app handles:
+# - user registration
+# - CV / JD upload and text extraction
+# - entity extraction and storage
+# - gap analysis
+# - entity normalisation
+# - local course catalog import and search
+# - course recommendations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, List, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from sqlalchemy import text
@@ -27,43 +34,113 @@ from app.services.recommender.course_ranker import rank_courses_for_missing
 from app.services.text_extraction import extract_text_from_upload
 from app.utils.security import hash_password
 
+
+# Create the FastAPI application instance.
 app = FastAPI(
     title="Skillgap Backend API",
     description="API for CV/JD parsing, entity extraction, gap analysis, ESCO-style normalization, and DB-backed course recommendations.",
     version="0.1.0",
 )
-
-# Dev-time convenience
+# Development convenience:
+# create tables if they do not already exist.
+# create_all() does not alter existing tables, it only creates missing ones.
 Base.metadata.create_all(bind=engine)
 
+# Synonym mapping used to make user-facing missing entities more consistent.
+# This helps keep labels cleaner in the API response.
+SYNONYMS = {
+    "rest": "rest api",
+    "restful api": "rest api",
+    "golang": "go",
+    "g-rpc": "grpc",
+    "g rpc": "grpc",
+    "k8s": "kubernetes",
+}
+
+# Normalise a value into lowercase trimmed text.
+# This is used by helper functions to keep comparisons consistent.
+def _norm(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+# Canonicalise a list of missing entities before returning them to the frontend.
+# This keeps user-facing output consistent with the ranker, for example:
+# - rest -> rest api
+# - k8s -> kubernetes
+# Duplicate values are removed while preserving order.
+def _canonicalize_missing_entities(values: List[str]) -> List[str]:
+    output: List[str] = []
+    seen = set()
+
+    for value in values or []:
+        cleaned = _norm(value)
+        if not cleaned:
+            continue
+
+        cleaned = SYNONYMS.get(cleaned, cleaned)
+
+        if cleaned not in seen:
+            seen.add(cleaned)
+            output.append(cleaned)
+
+    return output
+
+# Clean organization text before returning it in API responses.
+# This helps when DB values contain extra braces or quotes, such as:
+def _clean_organization(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+
+    text_value = str(value).strip()
+
+    if not text_value:
+        return None
+
+    if text_value.startswith("{") and text_value.endswith("}"):
+        text_value = text_value[1:-1].strip()
+
+    text_value = text_value.replace('\\"', '"').strip()
+    text_value = text_value.strip('"').strip()
+    text_value = text_value.replace('"', "").strip()
+
+    return text_value or None
+
+# Root endpoint used as a quick health check.
 @app.get("/")
 def home():
     return {"message": "Skillgap backend API is running"}
 
+# Simple database test endpoint.
+# This confirms that the backend can connect to PostgreSQL successfully.
 @app.get("/db-test")
 def test_database(db=Depends(get_db)):
     result = db.execute(text("SELECT 'Database connection OK' AS status;"))
     return {"database": result.fetchone()[0]}
 
-# User registration
+# Register a new user.
+# This validates username and email uniqueness before saving the user.
 @app.post("/register")
 async def register_user(payload: UserCreate, db=Depends(get_db)):
+    # Check whether the username is already taken.
     existing_username = db.query(User).filter(User.username == payload.username).first()
     if existing_username:
         raise HTTPException(status_code=400, detail="Username already taken")
 
+    # Check whether the email is already registered.
     existing_email = db.query(User).filter(User.email == payload.email).first()
     if existing_email:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Hash the password before storing it.
     hashed = hash_password(payload.password)
 
+    # Create the new user record.
     new_user = User(
         username=payload.username,
         email=payload.email,
         hashed_password=hashed,
     )
 
+    # Save the user in the database.
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -74,20 +151,25 @@ async def register_user(payload: UserCreate, db=Depends(get_db)):
         "username": new_user.username,
     }
 
-# Upload CV endpoint
+# Upload CV endpoint.
+# This is currently a lightweight upload check rather than a storage endpoint.
 @app.post("/upload-cv")
 async def upload_cv(file: UploadFile = File(...)):
     contents = await file.read()
+
     return {
         "filename": file.filename,
         "filesize": len(contents),
         "content_type": file.content_type,
         "status": "CV uploaded successfully",
     }
-# Upload Job Description endpoint
+
+# Upload Job Description endpoint.
+# This is currently a lightweight upload check rather than a storage endpoint.
 @app.post("/upload-jd")
 async def upload_jd(file: UploadFile = File(...)):
     contents = await file.read()
+
     return {
         "filename": file.filename,
         "filesize": len(contents),
@@ -95,52 +177,81 @@ async def upload_jd(file: UploadFile = File(...)):
         "status": "Job Description uploaded successfully",
     }
 
-# Text extraction enpoint for unit testing
+# Extract raw text from an uploaded file.
+# Useful for unit testing PDF / DOCX / TXT parsing.
 @app.post("/extract-text")
 async def extract_text(file: UploadFile = File(...)):
     contents = await file.read()
     cleaned_text = extract_text_from_upload(file, contents)
-    return {"filename": file.filename, "text": cleaned_text}
 
-# Entity extraction endpoint for unit testing
+    return {
+        "filename": file.filename,
+        "text": cleaned_text,
+    }
+
+# Extract entities from an uploaded file.
+# Useful for unit testing the NLP/entity extraction pipeline.
 @app.post("/extract-entities")
 async def extract_entities_endpoint(file: UploadFile = File(...)):
     contents = await file.read()
     cleaned_text = extract_text_from_upload(file, contents)
     extraction_result = extract_entities(cleaned_text)
-    return {"filename": file.filename, "entities": extraction_result}
 
-# Save CV entities for unit testing
+    return {
+        "filename": file.filename,
+        "entities": extraction_result,
+    }
+
+# Extract and save CV entities for a specific user.
+# Existing CV entities for the user should be cleared by the storage function
+# to avoid duplicates after repeated uploads.
 @app.post("/save-cv-entities")
 async def save_cv_entities_endpoint(user_id: int, file: UploadFile = File(...), db=Depends(get_db)):
     contents = await file.read()
     cleaned_text = extract_text_from_upload(file, contents)
     extraction = extract_entities(cleaned_text)
-    entity_list = extraction["unique_entities"]
-    # before saving, delete existing CV entities for this user to avoid duplicates on repeated uploads
-    result = save_cv_entities(db, user_id, entity_list)
-    return {"saved": result, "entities": entity_list}
 
-# Save JD entities
+    entity_list = extraction["unique_entities"]
+    result = save_cv_entities(db, user_id, entity_list)
+
+    return {
+        "saved": result,
+        "entities": entity_list,
+    }
+
+# Extract and save Job Description entities.
+# These are stored as the target job requirements against which the CV is compared.
 @app.post("/save-jd-entities")
 async def save_jd_entities_endpoint(file: UploadFile = File(...), db=Depends(get_db)):
     contents = await file.read()
     cleaned_text = extract_text_from_upload(file, contents)
     extraction = extract_entities(cleaned_text)
-    entity_list = extraction["unique_entities"]
-    # before saving, delete existing Job Description entities for this user to avoid duplicates on repeated uploads
-    result = save_jd_entities(db, entity_list)
-    return {"saved": result, "entities": entity_list}
 
-# Compute skill gap between CV and Job Description entities and save a snapshot of the missing entities for this user in the database
+    entity_list = extraction["unique_entities"]
+    result = save_jd_entities(db, entity_list)
+
+    return {
+        "saved": result,
+        "entities": entity_list,
+    }
+
+# Compute the gap between a user's CV entities and the current JD entities.
+# The resulting missing entities are saved as a new snapshot.
 @app.post("/compute-gap")
 async def compute_gap(user_id: int, db=Depends(get_db)):
+    # Ensure the user exists before attempting gap analysis.
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=400, detail=f"User with id {user_id} does not exist")
 
+    # Compute the missing entities for this user.
     missing = compute_missing_entities(db, user_id)
 
+    # Canonicalise the missing entities before storing the snapshot.
+    # This keeps later recommendation output more consistent.
+    missing = _canonicalize_missing_entities(missing)
+
+    # Save the gap snapshot to the database.
     snapshot = GapSnapshot(user_id=user_id, missing_entities=missing)
     db.add(snapshot)
     db.commit()
@@ -153,7 +264,7 @@ async def compute_gap(user_id: int, db=Depends(get_db)):
         "snapshot_id": snapshot.id,
     }
 
-# Get latest missing entities
+# Return the latest missing-entity snapshot for a given user.
 @app.get("/missing-entities")
 async def get_missing_entities(user_id: int, db=Depends(get_db)):
     snapshot = (
@@ -162,38 +273,53 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
+
+    # If no snapshot exists yet, return an empty result rather than an error.
     if not snapshot:
-        return {"user_id": user_id, "missing_entities": [], "count": 0}
-    # return the missing entities along with snapshot metadata
+        return {
+            "user_id": user_id,
+            "missing_entities": [],
+            "count": 0,
+        }
+
+    # Canonicalise again on output to keep older snapshots consistent too.
+    missing = _canonicalize_missing_entities(snapshot.missing_entities or [])
+
     return {
         "user_id": user_id,
-        "missing_entities": snapshot.missing_entities,
-        "count": len(snapshot.missing_entities),
+        "missing_entities": missing,
+        "count": len(missing),
         "snapshot_id": snapshot.id,
         "created_at": snapshot.created_at,
     }
 
-# Normalize entities using ESCO-style normalisation and save the results in the database
+# Normalise CV and JD entities using the ESCO-style normaliser.
+# Existing normalised records for the user are deleted first to avoid stale data.
 @app.post("/normalise-entities")
 async def normalise_entities(user_id: int, db=Depends(get_db)):
+    # Remove previous normalised entity rows for this user.
     db.query(NormalisedEntity).filter(NormalisedEntity.user_id == user_id).delete()
     db.commit()
 
+    # Load raw entities from the user's CV and the current JD entity set.
     cv_entities = db.query(CVEntity.entity_name).filter(CVEntity.user_id == user_id).all()
     jd_entities = db.query(JDEntity.entity_name).all()
 
+    # Build a combined list of raw entities using both original and lowercase forms.
     raw_entities = [(x[0], x[0].strip().lower()) for x in cv_entities] + [
         (x[0], x[0].strip().lower()) for x in jd_entities
     ]
-    # to avoid normalising the same entity numerous times if it appears in both CV and JD,
-    # we create a mapping of lowercased entities to their original form and only normalise unique lowercased entities
+
+    # Avoid normalising the same lowercased entity multiple times.
+    # This is useful when the same entity appears in both CV and JD.
     lower_to_original = {}
     for original, lowered in raw_entities:
         if lowered not in lower_to_original:
             lower_to_original[lowered] = original
 
     unique_original_entities = list(lower_to_original.values())
-    # normalise each unique entity and save the results
+
+    # Normalise each entity and prepare DB rows for insertion.
     normalised_records = []
     for original_entity in unique_original_entities:
         result = normalise_entity(original_entity)
@@ -206,6 +332,7 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
             source=result["source"],
             entity_type=result["type"],
         )
+
         db.add(entry)
         normalised_records.append(result)
 
@@ -217,23 +344,28 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
         "count": len(normalised_records),
     }
 
-# Import local catalog data from a JSON file into the database
+# Import the local course catalog JSON file into the database.
+# This is mainly for development / testing when using a local prepared catalog.
 @app.post("/catalog/import-local")
 def import_catalog_local(db=Depends(get_db)):
+    # Use the current working directory as the base directory.
     base_dir = Path(".")
+
+    # Ingest the JSON file into the courses table.
     stats = ingest_catalog(
         db=db,
         base_dir=base_dir,
         filename="kaggle_courses.json",
         truncate_first=True,
     )
-    # return a response indicating the import is complete
+
     return {
         "message": "Catalog import complete",
         "stats": {"kaggle_courses.json": stats},
     }
 
-# Search local catalog
+# Search the local course catalog by query string.
+# This performs a simple case-insensitive match against name, description, or provider.
 @app.get("/catalog/search")
 def search_catalog(query: str, limit: int = 10, db=Depends(get_db)):
     q = f"%{query.lower()}%"
@@ -249,31 +381,37 @@ def search_catalog(query: str, limit: int = 10, db=Depends(get_db)):
         .all()
     )
 
+    # Build a clean response object for each course.
+    results = []
+    for row in rows:
+        results.append(
+            {
+                "url": getattr(row, "url", None),
+                "course_name": getattr(row, "course_name", None),
+                "provider": getattr(row, "provider", None),
+                "organization": _clean_organization(
+                    getattr(row, "organization", None) or getattr(row, "organisation", None)
+                ),
+                "type": getattr(row, "type", None),
+                "level": getattr(row, "level", None),
+                "subject": getattr(row, "subject", None),
+                "duration": getattr(row, "duration", None),
+                "rating": getattr(row, "rating", None),
+                "nu_reviews": getattr(row, "nu_reviews", None),
+                "enrollments": getattr(row, "enrollments", None),
+                "skills": getattr(row, "skills", None),
+                "skills_norm": getattr(row, "skills_norm", None),
+                "description": getattr(row, "description", None),
+            }
+        )
+
     return {
         "query": query,
-        "count": len(rows),
-        "results": [
-            {
-                "url": getattr(r, "url", None),
-                "course_name": getattr(r, "course_name", None),
-                "provider": getattr(r, "provider", None),
-                "organization": getattr(r, "organization", None) or getattr(r, "organisation", None),
-                "type": getattr(r, "type", None),
-                "level": getattr(r, "level", None),
-                "subject": getattr(r, "subject", None),
-                "duration": getattr(r, "duration", None),
-                "rating": getattr(r, "rating", None),
-                "nu_reviews": getattr(r, "nu_reviews", None),
-                "enrollments": getattr(r, "enrollments", None),
-                "skills": getattr(r, "skills", None),
-                "skills_norm": getattr(r, "skills_norm", None),
-                "description": getattr(r, "description", None),
-            }
-            for r in rows
-        ],
+        "count": len(results),
+        "results": results,
     }
 
-# Recommend courses
+# Recommend courses for the user's latest missing-entity snapshot.
 @app.get("/recommend-courses")
 async def recommend_courses(
     user_id: int,
@@ -283,21 +421,22 @@ async def recommend_courses(
     has_taken_course: Optional[bool] = None,
     db=Depends(get_db),
 ):
-    # Guided-question support:
-    # - experience_level can be Beginner / Intermediate / Advanced
-    # - has_taken_course can be true / false
-    # If experience_level is omitted and has_taken_course=false,
-    # the ranker infers Beginner internally
+    # Load the latest gap snapshot for the user.
     snapshot = (
         db.query(GapSnapshot)
         .filter(GapSnapshot.user_id == user_id)
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
+
+    # If the user has not completed gap analysis yet, return an informative error payload.
     if not snapshot:
         return {"error": "No gap analysis found. Complete a skill gap test first."}
-    missing = snapshot.missing_entities or []
-    # Call the ranker with the missing entities and optional filters to get ranked course recommendations.
+
+    # Canonicalise missing entities so the frontend sees consistent values.
+    missing = _canonicalize_missing_entities(snapshot.missing_entities or [])
+
+    # Call the ranker using the missing entities and optional guided-question inputs.
     ranked = rank_courses_for_missing(
         db=db,
         missing_entities=missing,
@@ -306,7 +445,6 @@ async def recommend_courses(
         experience_level=experience_level,
         has_taken_course=has_taken_course,
     )
-    # Only include optional fields in the API response if they are consistently present in the top results to avoid sparse data in the response
     return {
         "user_id": user_id,
         "missing_entities": missing,
