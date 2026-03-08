@@ -1,127 +1,251 @@
-# course_ranker.py
+# app/services/recommender/course_ranker.py
+# Uses internal similarity scoring for ranking
+# Returns user-friendly recommendation output
+# Supports guided-question inputs:
+#   - experience_level
+#   - has_taken_course
+# Raw scores are not exposed to the user
+
 from __future__ import annotations
-from typing import Any, Dict, List, Set
-from sqlalchemy import text
+from typing import Any, Dict, List, Optional, Set
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 from app.services.recommender.scoring import jaccard, tfidf_cosine_scores, weighted_final
 
-# Minimal synonym/canonical map to improve matching between missing entities and course skills
-# This is important because your gap snapshot might contain "rest" while the catalog uses "rest api"
 SYNONYMS = {
     "rest": "rest api",
+    "restful api": "rest api",
     "golang": "go",
     "g-rpc": "grpc",
     "g rpc": "grpc",
     "k8s": "kubernetes",
-    ".net": "dotnet",
-    "postgres": "postgresql" 
 }
 
-# Format float as percentage with one decimal place, e.g. 0.091 -> 9.1
-def _pct1(x: float) -> float:
-    try:
-        return round(float(x) * 100.0, 1)
-    except Exception:
-        return 0.0
+LEVEL_MAP = {
+    "beginner": {"beginner", "introductory", "foundation", "foundational", "foundations", "basic"},
+    "intermediate": {"intermediate"},
+    "advanced": {"advanced"},
+}
 
-# Normalize string to a canonical comparison form
+
 def _norm(s: str) -> str:
     return (s or "").strip().lower()
 
-# Apply synonyms to a set of skills
-def _apply_synonyms(skills: Set[str]) -> Set[str]:
-    out: Set[str] = set()
-    for s in skills:
-        out.add(SYNONYMS.get(s, s))
-    return out
 
-# Convert a python set into a Postgres array literal for jsonb ?| operator
-# Example: {"docker","go","rest api"}
+def _apply_synonyms(values: Set[str]) -> Set[str]:
+    return {SYNONYMS.get(v, v) for v in values}
+
+
 def _to_pg_array_literal(values: Set[str]) -> str:
-    # Values should be lowercase and should not include braces
-    # Note: if a value contains a comma, this becomes unsafe; for your skill labels this is usually fine
     return "{" + ",".join(sorted(values)) + "}"
+
+
+def _infer_level_filter(experience_level: Optional[str], has_taken_course: Optional[bool]) -> Optional[str]:
+    if experience_level:
+        lv = _norm(experience_level)
+        if lv in {"beginner", "intermediate", "advanced"}:
+            return lv
+
+    if has_taken_course is False:
+        return "beginner"
+
+    return None
+
+
+def _recommendation_label(coverage: float) -> str:
+    if coverage >= 0.50:
+        return "Highly recommended"
+    if coverage >= 0.25:
+        return "Recommended"
+    return "Consider"
+
+
+def _consistent_fields(rows: List[Dict[str, Any]], field: str, threshold: float = 0.80) -> bool:
+    if not rows:
+        return False
+    present = sum(1 for row in rows if row.get(field) is not None)
+    return (present / len(rows)) >= threshold
+
+
+def _get_course_columns(db: Session) -> Set[str]:
+    engine = db.get_bind()
+    inspector = inspect(engine)
+    return {col["name"].lower() for col in inspector.get_columns("courses")}
+
 
 def rank_courses_for_missing(
     db: Session,
     missing_entities: List[str],
-    top_n: int = 25,
+    top_n: int = 10,
     use_cosine: bool = True,
+    experience_level: Optional[str] = None,
+    has_taken_course: Optional[bool] = None,
     w_jaccard: float = 0.75,
     w_cosine: float = 0.25,
 ) -> List[Dict[str, Any]]:
-    # Normalize + canonicalize missing entities
-    missing_set = {_norm(str(m)) for m in (missing_entities or []) if str(m).strip()}
-    missing_set = _apply_synonyms(missing_set)
+    missing = {_norm(str(m)) for m in (missing_entities or []) if str(m).strip()}
+    missing = _apply_synonyms(missing)
 
-    if not missing_set:
+    if not missing:
         return []
 
-    # Candidate filtering using jsonb ?| operator:
-    # This returns only courses where skills_norm contains ANY of the missing terms
-    # This prevents random limiting from missing relevant courses (docker/go/rest api/etc)
-    sql = text("""
+    course_columns = _get_course_columns(db)
+    if "skills_norm" not in course_columns:
+        return []
+
+    level_filter = _infer_level_filter(experience_level, has_taken_course)
+    allowed_levels = LEVEL_MAP.get(level_filter) if level_filter else None
+
+    params: Dict[str, Any] = {"missing": _to_pg_array_literal(missing)}
+
+    base_match_sql = "skills_norm IS NOT NULL AND skills_norm ?| :missing"
+
+    grpc_fallback_sql = ""
+    if "grpc" in missing:
+        description_col = "description" if "description" in course_columns else "NULL"
+        grpc_fallback_sql = (
+            " OR lower(course_name) LIKE '%grpc%'"
+            f" OR lower(COALESCE({description_col}, '')) LIKE '%grpc%'"
+            f" OR lower(COALESCE({description_col}, '')) LIKE '%remote procedure%'"
+        )
+
+    level_clause = ""
+    if allowed_levels and "level" in course_columns:
+        params["levels"] = list(allowed_levels)
+        level_clause = " AND level IS NOT NULL AND lower(level) = ANY(:levels)"
+
+    org_expr = "organization"
+    if "organization" not in course_columns and "organisation" in course_columns:
+        org_expr = "organisation AS organization"
+    elif "organization" not in course_columns:
+        org_expr = "NULL AS organization"
+
+    optional_columns = {
+        "type": "type",
+        "level": "level",
+        "subject": "subject",
+        "duration": "duration",
+        "rating": "rating",
+        "nu_reviews": "nu_reviews",
+        "enrollments": "enrollments",
+        "description": "description",
+    }
+
+    select_parts = [
+        "id",
+        "url",
+        "course_name",
+        "provider",
+        org_expr,
+    ]
+    for alias, col_name in optional_columns.items():
+        if col_name in course_columns:
+            select_parts.append(col_name)
+        else:
+            select_parts.append(f"NULL AS {alias}")
+    select_parts.append("skills_norm")
+
+    sql = text(f"""
         SELECT
-            id, url, course_name, provider, organization, organisation, type, level, subject,
-            duration, rating, nu_reviews, enrollments, description, skills_norm
+            {', '.join(select_parts)}
         FROM courses
-        WHERE skills_norm IS NOT NULL
-          AND skills_norm ?| :missing
-        LIMIT 2000
+        WHERE ({base_match_sql}{grpc_fallback_sql})
+        {level_clause}
+        LIMIT 2500
     """)
 
-    missing_pg = _to_pg_array_literal(missing_set)
-    rows = db.execute(sql, {"missing": missing_pg}).mappings().all()
-
+    rows = db.execute(sql, params).mappings().all()
     if not rows:
         return []
 
-    # Build TF-IDF docs list for cosine scoring (optional)
     docs: List[str] = []
-    for r in rows:
-        name = str(r.get("course_name") or "")
-        desc = str(r.get("description") or "")
+    for row in rows:
+        name = str(row.get("course_name") or "")
+        desc = str(row.get("description") or "")
         docs.append(f"{name}. {desc}")
-    # The query for cosine similarity is just the missing skills joined together, which is a simple but effective way to get a relevance signal that complements Jaccard.
-    query_text = " ".join(sorted(missing_set))
+
+    query_text = " ".join(sorted(missing))
     cosine_scores = tfidf_cosine_scores(query_text, docs) if use_cosine else [0.0] * len(rows)
 
-    scored: List[Dict[str, Any]] = []
-    for r, cos in zip(rows, cosine_scores):
-        skills_norm = [str(x).strip().lower() for x in (r.get("skills_norm") or []) if str(x).strip()]
-        # Core similarity
-        jac = jaccard(missing_set, skills_norm)
-        # Explainability
-        matched = sorted(set(skills_norm) & set(missing_set))
-        if not matched:
-            # If it passed SQL filtering but doesn't match after normalization, skip it
+    internal_ranked: List[Dict[str, Any]] = []
+    missing_count = len(missing)
+
+    for row, cos in zip(rows, cosine_scores):
+        skills_norm = [str(x).strip().lower() for x in (row.get("skills_norm") or []) if str(x).strip()]
+        matched = sorted(set(skills_norm) & missing)
+        matched_count = len(matched)
+
+        if matched_count == 0:
             continue
 
-        # Final blended score
+        jac = jaccard(missing, skills_norm)
         final = weighted_final(jaccard_score=jac, cosine_score=cos, w_j=w_jaccard, w_c=w_cosine)
+        coverage = matched_count / missing_count if missing_count > 0 else 0.0
 
-        scored.append({
-            "course_id": r.get("id"),
-            "url": r.get("url"),
-            "course_name": r.get("course_name"),
-            "provider": r.get("provider"),
-            # Handle both spellings just in case your DB uses one or the other
-            "organization": r.get("organization") or r.get("organisation"),
-            "type": r.get("type"),
-            "level": r.get("level"),
-            "subject": r.get("subject"),
-            "duration": r.get("duration"),
-            "rating": r.get("rating"),
-            "nu_reviews": r.get("nu_reviews"),
-            "enrollments": r.get("enrollments"),
-            "skills_norm": skills_norm,
-            # Clean UI-ready score formatting
-            "score_jaccard_pct": _pct1(jac),
-            "score_cosine_pct": _pct1(float(cos)),
-            "final_score_pct": _pct1(final),
+        internal_ranked.append({
+            "course_id": row.get("id"),
+            "url": row.get("url"),
+            "course_name": row.get("course_name"),
+            "provider": row.get("provider"),
+            "organization": row.get("organization"),
+            "type": row.get("type"),
+            "level": row.get("level"),
+            "subject": row.get("subject"),
+            "duration": row.get("duration"),
+            "rating": row.get("rating"),
+            "nu_reviews": row.get("nu_reviews"),
+            "enrollments": row.get("enrollments"),
             "matched_skills": matched,
-            "matched_count": len(matched),
+            "matched_count": matched_count,
+            "covers": f"{matched_count}/{missing_count}",
+            "recommendation_label": _recommendation_label(coverage),
+            "_final": float(final),
+            "_coverage": float(coverage),
         })
-    # Sort by final score then matched_count
-    scored.sort(key=lambda x: (x["final_score_pct"], x["matched_count"]), reverse=True)
-    return scored[:top_n]
+
+    internal_ranked.sort(
+        key=lambda x: (x["_final"], x["_coverage"], x["matched_count"]),
+        reverse=True,
+    )
+
+    top = internal_ranked[:top_n]
+
+    include_org = _consistent_fields(top, "organization", threshold=0.80)
+    include_level = _consistent_fields(top, "level", threshold=0.80)
+    include_type = _consistent_fields(top, "type", threshold=0.80)
+    include_subject = _consistent_fields(top, "subject", threshold=0.80)
+    include_duration = _consistent_fields(top, "duration", threshold=0.80)
+    include_rating = _consistent_fields(top, "rating", threshold=0.80)
+    include_reviews = _consistent_fields(top, "nu_reviews", threshold=0.80)
+    include_enrollments = _consistent_fields(top, "enrollments", threshold=0.80)
+
+    output: List[Dict[str, Any]] = []
+    for row in top:
+        item: Dict[str, Any] = {
+            "course_id": row["course_id"],
+            "url": row["url"],
+            "course_name": row["course_name"],
+            "provider": row["provider"],
+            "recommendation_label": row["recommendation_label"],
+            "covers": row["covers"],
+            "matched_skills": row["matched_skills"],
+            "matched_count": row["matched_count"],
+        }
+        if include_org:
+            item["organization"] = row.get("organization")
+        if include_level:
+            item["level"] = row.get("level")
+        if include_type:
+            item["type"] = row.get("type")
+        if include_subject:
+            item["subject"] = row.get("subject")
+        if include_duration:
+            item["duration"] = row.get("duration")
+        if include_rating:
+            item["rating"] = row.get("rating")
+        if include_reviews:
+            item["nu_reviews"] = row.get("nu_reviews")
+        if include_enrollments:
+            item["enrollments"] = row.get("enrollments")
+        output.append(item)
+    return output
