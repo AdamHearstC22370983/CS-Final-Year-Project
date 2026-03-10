@@ -2,15 +2,12 @@ body {
   background-color: #f8f9fa;
   color: #212529;
 }
-
 .skillgap-nav {
   background: linear-gradient(90deg, #0d1b2a, #12395b);
 }
-
 .hero-section {
   background: linear-gradient(180deg, #eef7fb 0%, #f8f9fa 100%);
 }
-
 .label-pill {
   background-color: #d9f3ff;
   color: #0b3954;
@@ -18,7 +15,23 @@ body {
   padding: 0.6rem 0.9rem;
   font-weight: 600;
 }
-
 .card-title {
   font-weight: 700;
+}
+.matched-skill-pill {
+  background-color: #e8f4fd;
+  color: #0b3954;
+  border: 1px solid #b8dff5;
+  padding: 0.45rem 0.75rem;
+  font-weight: 600;
+}
+.provider-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  border-radius: 10px;
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  padding: 4px;
+  flex-shrink: 0;
 }
