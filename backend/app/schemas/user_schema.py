@@ -4,3 +4,9 @@ class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+
+# Used when signing in
+# The identifier can be either a username or an email.
+class UserLogin(BaseModel):
+    identifier: str
+    password : str
