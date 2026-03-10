@@ -1,9 +1,13 @@
-import { useState } from "react";
-import api from "../services/api";
 //Register.jsx - User will register their account information on this page
 //Only collecting minimal necessary data on the user i.e. username, password and email.
 //May implement a security question
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../services/api";
+
 function Register() {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -27,11 +31,16 @@ function Register() {
     try {
       const response = await api.post("/register", formData);
       setMessage(response.data.message || "Registration successful.");
+
       setFormData({
         username: "",
         email: "",
         password: "",
       });
+
+      setTimeout(() => {
+        navigate("/login");
+      }, 800);
     } catch (err) {
       setError(err.response?.data?.detail || "Registration failed.");
     }

@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import UploadCard from "../components/UploadCard";
 import GuidedQuestions from "../components/GuidedQuestions";
-//Dashboard.jsx - The main dashboard for user activity
+import { getCurrentUser } from "../services/auth";
+//Dashboard.jsx
 function Dashboard() {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
 
-  const [userId, setUserId] = useState("1");
   const [cvFile, setCvFile] = useState(null);
   const [jdFile, setJdFile] = useState(null);
   const [experienceLevel, setExperienceLevel] = useState("");
@@ -27,7 +28,7 @@ function Dashboard() {
     const formData = new FormData();
     formData.append("file", cvFile);
 
-    await api.post(`/save-cv-entities?user_id=${userId}`, formData, {
+    await api.post(`/save-cv-entities?user_id=${currentUser.user_id}`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   };
@@ -42,7 +43,7 @@ function Dashboard() {
   };
 
   const computeGap = async () => {
-    await api.post(`/compute-gap?user_id=${userId}`);
+    await api.post(`/compute-gap?user_id=${currentUser.user_id}`);
   };
 
   const handleRunAnalysis = async () => {
@@ -50,8 +51,8 @@ function Dashboard() {
     setError("");
 
     try {
-      if (!userId) {
-        throw new Error("User ID is required.");
+      if (!currentUser?.user_id) {
+        throw new Error("No signed-in user found.");
       }
 
       if (!cvFile || !jdFile) {
@@ -65,7 +66,7 @@ function Dashboard() {
       await computeGap();
 
       navigate(
-        `/results?user_id=${userId}&experience_level=${experienceLevel}&has_taken_course=${hasTakenCourse}`
+        `/results?experience_level=${experienceLevel}&has_taken_course=${hasTakenCourse}`
       );
     } catch (err) {
       setError(err.response?.data?.detail || err.message || "Analysis failed.");
@@ -84,15 +85,9 @@ function Dashboard() {
 
       <div className="card shadow-sm border-0 mb-4">
         <div className="card-body">
-          <label className="form-label fw-semibold">User ID</label>
-          <input
-            type="number"
-            className="form-control"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-          />
-          <div className="form-text">
-            This is temporary until login/session handling is connected properly.
+          <div className="fw-semibold mb-1">Signed in user</div>
+          <div className="text-muted">
+            {currentUser?.username} ({currentUser?.email})
           </div>
         </div>
       </div>

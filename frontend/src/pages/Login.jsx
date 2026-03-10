@@ -1,10 +1,18 @@
+//Login.jsx
 import { useState } from "react";
-//Login.jsx - Login page for a registered user
+import { useNavigate } from "react-router-dom";
+import api from "../services/api";
+import { saveCurrentUser } from "../services/auth";
+
 function Login() {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
     identifier: "",
     password: "",
   });
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const handleChange = (e) => {
     setFormData((prev) => ({
@@ -13,10 +21,25 @@ function Login() {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setMessage("");
 
-    alert("Login endpoint not connected yet. We will add backend authentication next.");
+    try {
+      const response = await api.post("/login", formData);
+      const user = response.data?.user;
+
+      if (!user) {
+        throw new Error("Login response did not include user details.");
+      }
+
+      saveCurrentUser(user);
+      setMessage("Login successful.");
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || "Login failed.");
+    }
   };
 
   return (
@@ -27,7 +50,7 @@ function Login() {
             <div className="card-body p-4">
               <h2 className="mb-3">Sign In</h2>
               <p className="text-muted">
-                Sign in with your account credentials.
+                Sign in with your username or email and password.
               </p>
 
               <form onSubmit={handleSubmit}>
@@ -54,6 +77,9 @@ function Login() {
                     required
                   />
                 </div>
+
+                {message && <div className="alert alert-success">{message}</div>}
+                {error && <div className="alert alert-danger">{error}</div>}
 
                 <button type="submit" className="btn btn-primary">
                   Sign In

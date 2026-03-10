@@ -1,13 +1,15 @@
+//Results.jsx - Shows the results of the computed skillgap and recommends courses to the user
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import MissingEntitiesList from "../components/MissingEntitiesList";
 import RecommendationCard from "../components/RecommendationCard";
-//Results.jsx - Shows the results of the computed skillgap and recommends courses to the user
+import { getCurrentUser } from "../services/auth";
+
 function Results() {
   const [searchParams] = useSearchParams();
+  const currentUser = getCurrentUser();
 
-  const userId = searchParams.get("user_id") || "1";
   const experienceLevel = searchParams.get("experience_level") || "";
   const hasTakenCourse = searchParams.get("has_taken_course") || "";
 
@@ -21,11 +23,15 @@ function Results() {
     setError("");
 
     try {
-      const missingResponse = await api.get(`/missing-entities?user_id=${userId}`);
+      if (!currentUser?.user_id) {
+        throw new Error("No signed-in user found.");
+      }
+
+      const missingResponse = await api.get(`/missing-entities?user_id=${currentUser.user_id}`);
 
       const recommendationResponse = await api.get("/recommend-courses", {
         params: {
-          user_id: userId,
+          user_id: currentUser.user_id,
           top_n: 10,
           use_cosine: true,
           experience_level: experienceLevel || undefined,
@@ -39,7 +45,7 @@ function Results() {
       setMissingEntities(missingResponse.data.missing_entities || []);
       setRecommendations(recommendationResponse.data.recommendations || []);
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to load results.");
+      setError(err.response?.data?.detail || err.message || "Failed to load results.");
     } finally {
       setLoading(false);
     }
