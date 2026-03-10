@@ -2,6 +2,7 @@
 # Skillgap backend entry point.
 # This FastAPI app handles:
 # - user registration
+# - user login
 # - CV / JD upload and text extraction
 # - entity extraction and storage
 # - gap analysis
@@ -13,7 +14,8 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
-from sqlalchemy import text
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import or_, text
 
 from app.models.CV_entity import CVEntity
 from app.models.JD_entity import JDEntity
@@ -23,7 +25,7 @@ from app.models.gap_snapshot import GapSnapshot
 from app.models.normalised_entity import NormalisedEntity
 from app.models.user import User
 
-from app.schemas.user_schema import UserCreate
+from app.schemas.user_schema import UserCreate, UserLogin
 
 from app.services.ESCO.esco_normaliser import normalise_entity
 from app.services.catalog.catalog_ingest import ingest_catalog
@@ -32,7 +34,7 @@ from app.services.entity_storage import save_cv_entities, save_jd_entities
 from app.services.gap_analysis import compute_missing_entities
 from app.services.recommender.course_ranker import rank_courses_for_missing
 from app.services.text_extraction import extract_text_from_upload
-from app.utils.security import hash_password
+from app.utils.security import hash_password, verify_password
 
 
 # Create the FastAPI application instance.
@@ -41,13 +43,27 @@ app = FastAPI(
     description="API for CV/JD parsing, entity extraction, gap analysis, ESCO-style normalization, and DB-backed course recommendations.",
     version="0.1.0",
 )
+
+# Allow the React frontend to call the FastAPI backend during development.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Development convenience:
 # create tables if they do not already exist.
+# Note:
 # create_all() does not alter existing tables, it only creates missing ones.
 Base.metadata.create_all(bind=engine)
 
+
 # Synonym mapping used to make user-facing missing entities more consistent.
-# This helps keep labels cleaner in the API response.
 SYNONYMS = {
     "rest": "rest api",
     "restful api": "rest api",
@@ -57,15 +73,13 @@ SYNONYMS = {
     "k8s": "kubernetes",
 }
 
+
 # Normalise a value into lowercase trimmed text.
-# This is used by helper functions to keep comparisons consistent.
 def _norm(value: Any) -> str:
     return str(value or "").strip().lower()
 
+
 # Canonicalise a list of missing entities before returning them to the frontend.
-# This keeps user-facing output consistent with the ranker, for example:
-# - rest -> rest api
-# - k8s -> kubernetes
 # Duplicate values are removed while preserving order.
 def _canonicalize_missing_entities(values: List[str]) -> List[str]:
     output: List[str] = []
@@ -84,8 +98,8 @@ def _canonicalize_missing_entities(values: List[str]) -> List[str]:
 
     return output
 
+
 # Clean organization text before returning it in API responses.
-# This helps when DB values contain extra braces or quotes, such as:
 def _clean_organization(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -104,43 +118,39 @@ def _clean_organization(value: Any) -> Optional[str]:
 
     return text_value or None
 
+
 # Root endpoint used as a quick health check.
 @app.get("/")
 def home():
     return {"message": "Skillgap backend API is running"}
 
+
 # Simple database test endpoint.
-# This confirms that the backend can connect to PostgreSQL successfully.
 @app.get("/db-test")
 def test_database(db=Depends(get_db)):
     result = db.execute(text("SELECT 'Database connection OK' AS status;"))
     return {"database": result.fetchone()[0]}
 
+
 # Register a new user.
-# This validates username and email uniqueness before saving the user.
 @app.post("/register")
 async def register_user(payload: UserCreate, db=Depends(get_db)):
-    # Check whether the username is already taken.
     existing_username = db.query(User).filter(User.username == payload.username).first()
     if existing_username:
         raise HTTPException(status_code=400, detail="Username already taken")
 
-    # Check whether the email is already registered.
     existing_email = db.query(User).filter(User.email == payload.email).first()
     if existing_email:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Hash the password before storing it.
     hashed = hash_password(payload.password)
 
-    # Create the new user record.
     new_user = User(
         username=payload.username,
         email=payload.email,
         hashed_password=hashed,
     )
 
-    # Save the user in the database.
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -149,10 +159,61 @@ async def register_user(payload: UserCreate, db=Depends(get_db)):
         "message": "User created successfully",
         "user_id": new_user.id,
         "username": new_user.username,
+        "email": new_user.email,
     }
 
+
+# Sign in using either username or email plus password.
+# This is a simple first-step login flow that returns user identity data.
+# A full production version would use JWT or secure server-side sessions.
+@app.post("/login")
+async def login_user(payload: UserLogin, db=Depends(get_db)):
+    identifier = payload.identifier.strip()
+
+    user = (
+        db.query(User)
+        .filter(
+            or_(
+                User.username == identifier,
+                User.email == identifier,
+            )
+        )
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    return {
+        "message": "Login successful",
+        "user": {
+            "user_id": user.id,
+            "username": user.username,
+            "email": user.email,
+        },
+    }
+
+
+# Return a minimal public-safe user profile by user ID.
+# This is useful for restoring frontend session state.
+@app.get("/users/{user_id}")
+async def get_user_profile(user_id: int, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+    }
+
+
 # Upload CV endpoint.
-# This is currently a lightweight upload check rather than a storage endpoint.
 @app.post("/upload-cv")
 async def upload_cv(file: UploadFile = File(...)):
     contents = await file.read()
@@ -164,8 +225,8 @@ async def upload_cv(file: UploadFile = File(...)):
         "status": "CV uploaded successfully",
     }
 
+
 # Upload Job Description endpoint.
-# This is currently a lightweight upload check rather than a storage endpoint.
 @app.post("/upload-jd")
 async def upload_jd(file: UploadFile = File(...)):
     contents = await file.read()
@@ -177,8 +238,8 @@ async def upload_jd(file: UploadFile = File(...)):
         "status": "Job Description uploaded successfully",
     }
 
+
 # Extract raw text from an uploaded file.
-# Useful for unit testing PDF / DOCX / TXT parsing.
 @app.post("/extract-text")
 async def extract_text(file: UploadFile = File(...)):
     contents = await file.read()
@@ -189,8 +250,8 @@ async def extract_text(file: UploadFile = File(...)):
         "text": cleaned_text,
     }
 
+
 # Extract entities from an uploaded file.
-# Useful for unit testing the NLP/entity extraction pipeline.
 @app.post("/extract-entities")
 async def extract_entities_endpoint(file: UploadFile = File(...)):
     contents = await file.read()
@@ -202,9 +263,8 @@ async def extract_entities_endpoint(file: UploadFile = File(...)):
         "entities": extraction_result,
     }
 
+
 # Extract and save CV entities for a specific user.
-# Existing CV entities for the user should be cleared by the storage function
-# to avoid duplicates after repeated uploads.
 @app.post("/save-cv-entities")
 async def save_cv_entities_endpoint(user_id: int, file: UploadFile = File(...), db=Depends(get_db)):
     contents = await file.read()
@@ -219,8 +279,8 @@ async def save_cv_entities_endpoint(user_id: int, file: UploadFile = File(...), 
         "entities": entity_list,
     }
 
+
 # Extract and save Job Description entities.
-# These are stored as the target job requirements against which the CV is compared.
 @app.post("/save-jd-entities")
 async def save_jd_entities_endpoint(file: UploadFile = File(...), db=Depends(get_db)):
     contents = await file.read()
@@ -235,23 +295,17 @@ async def save_jd_entities_endpoint(file: UploadFile = File(...), db=Depends(get
         "entities": entity_list,
     }
 
+
 # Compute the gap between a user's CV entities and the current JD entities.
-# The resulting missing entities are saved as a new snapshot.
 @app.post("/compute-gap")
 async def compute_gap(user_id: int, db=Depends(get_db)):
-    # Ensure the user exists before attempting gap analysis.
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=400, detail=f"User with id {user_id} does not exist")
 
-    # Compute the missing entities for this user.
     missing = compute_missing_entities(db, user_id)
-
-    # Canonicalise the missing entities before storing the snapshot.
-    # This keeps later recommendation output more consistent.
     missing = _canonicalize_missing_entities(missing)
 
-    # Save the gap snapshot to the database.
     snapshot = GapSnapshot(user_id=user_id, missing_entities=missing)
     db.add(snapshot)
     db.commit()
@@ -264,6 +318,7 @@ async def compute_gap(user_id: int, db=Depends(get_db)):
         "snapshot_id": snapshot.id,
     }
 
+
 # Return the latest missing-entity snapshot for a given user.
 @app.get("/missing-entities")
 async def get_missing_entities(user_id: int, db=Depends(get_db)):
@@ -274,7 +329,6 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
         .first()
     )
 
-    # If no snapshot exists yet, return an empty result rather than an error.
     if not snapshot:
         return {
             "user_id": user_id,
@@ -282,7 +336,6 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
             "count": 0,
         }
 
-    # Canonicalise again on output to keep older snapshots consistent too.
     missing = _canonicalize_missing_entities(snapshot.missing_entities or [])
 
     return {
@@ -293,25 +346,20 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
         "created_at": snapshot.created_at,
     }
 
+
 # Normalise CV and JD entities using the ESCO-style normaliser.
-# Existing normalised records for the user are deleted first to avoid stale data.
 @app.post("/normalise-entities")
 async def normalise_entities(user_id: int, db=Depends(get_db)):
-    # Remove previous normalised entity rows for this user.
     db.query(NormalisedEntity).filter(NormalisedEntity.user_id == user_id).delete()
     db.commit()
 
-    # Load raw entities from the user's CV and the current JD entity set.
     cv_entities = db.query(CVEntity.entity_name).filter(CVEntity.user_id == user_id).all()
     jd_entities = db.query(JDEntity.entity_name).all()
 
-    # Build a combined list of raw entities using both original and lowercase forms.
     raw_entities = [(x[0], x[0].strip().lower()) for x in cv_entities] + [
         (x[0], x[0].strip().lower()) for x in jd_entities
     ]
 
-    # Avoid normalising the same lowercased entity multiple times.
-    # This is useful when the same entity appears in both CV and JD.
     lower_to_original = {}
     for original, lowered in raw_entities:
         if lowered not in lower_to_original:
@@ -319,7 +367,6 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
 
     unique_original_entities = list(lower_to_original.values())
 
-    # Normalise each entity and prepare DB rows for insertion.
     normalised_records = []
     for original_entity in unique_original_entities:
         result = normalise_entity(original_entity)
@@ -344,14 +391,12 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
         "count": len(normalised_records),
     }
 
+
 # Import the local course catalog JSON file into the database.
-# This is mainly for development / testing when using a local prepared catalog.
 @app.post("/catalog/import-local")
 def import_catalog_local(db=Depends(get_db)):
-    # Use the current working directory as the base directory.
     base_dir = Path(".")
 
-    # Ingest the JSON file into the courses table.
     stats = ingest_catalog(
         db=db,
         base_dir=base_dir,
@@ -364,8 +409,8 @@ def import_catalog_local(db=Depends(get_db)):
         "stats": {"kaggle_courses.json": stats},
     }
 
+
 # Search the local course catalog by query string.
-# This performs a simple case-insensitive match against name, description, or provider.
 @app.get("/catalog/search")
 def search_catalog(query: str, limit: int = 10, db=Depends(get_db)):
     q = f"%{query.lower()}%"
@@ -381,7 +426,6 @@ def search_catalog(query: str, limit: int = 10, db=Depends(get_db)):
         .all()
     )
 
-    # Build a clean response object for each course.
     results = []
     for row in rows:
         results.append(
@@ -411,6 +455,7 @@ def search_catalog(query: str, limit: int = 10, db=Depends(get_db)):
         "results": results,
     }
 
+
 # Recommend courses for the user's latest missing-entity snapshot.
 @app.get("/recommend-courses")
 async def recommend_courses(
@@ -421,22 +466,17 @@ async def recommend_courses(
     has_taken_course: Optional[bool] = None,
     db=Depends(get_db),
 ):
-    # Load the latest gap snapshot for the user.
     snapshot = (
         db.query(GapSnapshot)
         .filter(GapSnapshot.user_id == user_id)
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
-
-    # If the user has not completed gap analysis yet, return an informative error payload.
     if not snapshot:
         return {"error": "No gap analysis found. Complete a skill gap test first."}
 
-    # Canonicalise missing entities so the frontend sees consistent values.
     missing = _canonicalize_missing_entities(snapshot.missing_entities or [])
 
-    # Call the ranker using the missing entities and optional guided-question inputs.
     ranked = rank_courses_for_missing(
         db=db,
         missing_entities=missing,
