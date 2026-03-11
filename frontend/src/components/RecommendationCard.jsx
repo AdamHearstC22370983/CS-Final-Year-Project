@@ -1,7 +1,7 @@
 //RecommendationCard.jsx
 import { toTitleCaseSkill, formatDurationHours } from "../utils/formatters";
 import { getProviderDisplayName, getProviderLogo } from "../utils/providerLogos";
-
+//function to display the reccomendation card to the user
 function RecommendationCard({ recommendation }) {
   const {
     course_name,
@@ -25,11 +25,13 @@ function RecommendationCard({ recommendation }) {
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
           <div className="d-flex align-items-start gap-3">
             {providerLogo && (
-              <img
-                src={providerLogo}
-                alt={`${providerDisplayName} logo`}
-                className="provider-logo"
-              />
+              <div className="provider-logo-frame">
+                <img
+                  src={providerLogo}
+                  alt={`${providerDisplayName} logo`}
+                  className="provider-logo"
+                />
+              </div>
             )}
 
             <div>

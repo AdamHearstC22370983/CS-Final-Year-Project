@@ -1,7 +1,8 @@
 //Navbar.jsx
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { clearCurrentUser, getCurrentUser } from "../services/auth";
-
+import brandLogo from "../assets/images/brand/skillgap-logo.png";
+//function to create a navbar on each page
 function Navbar() {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
@@ -12,14 +13,14 @@ function Navbar() {
   };
 
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark skillgap-nav">
+    <nav className="navbar navbar-expand-lg skillgap-nav">
       <div className="container">
-        <Link className="navbar-brand fw-bold" to="/">
-          Skillgap
+        <Link className="navbar-brand skillgap-brand" to="/">
+          <img src={brandLogo} alt="Skillgap" className="skillgap-brand-logo" />
         </Link>
 
         <button
-          className="navbar-toggler"
+          className="navbar-toggler skillgap-nav-toggler"
           type="button"
           data-bs-toggle="collapse"
           data-bs-target="#mainNav"
@@ -67,23 +68,23 @@ function Navbar() {
             {!currentUser ? (
               <>
                 <li className="nav-item ms-lg-2">
-                  <NavLink className="btn btn-outline-light btn-sm me-2" to="/login">
+                  <NavLink className="btn btn-outline-primary btn-sm me-2 mt-2 mt-lg-0" to="/login">
                     Login
                   </NavLink>
                 </li>
                 <li className="nav-item mt-2 mt-lg-0">
-                  <NavLink className="btn btn-info btn-sm text-dark fw-semibold" to="/register">
+                  <NavLink className="btn btn-primary btn-sm" to="/register">
                     Register
                   </NavLink>
                 </li>
               </>
             ) : (
               <>
-                <li className="nav-item ms-lg-3 text-white small me-3 mt-2 mt-lg-0">
+                <li className="nav-item ms-lg-3 nav-user-label me-3 mt-2 mt-lg-0">
                   Signed in as <strong>{currentUser.username}</strong>
                 </li>
                 <li className="nav-item mt-2 mt-lg-0">
-                  <button className="btn btn-outline-light btn-sm" onClick={handleLogout}>
+                  <button className="btn btn-outline-primary btn-sm" onClick={handleLogout}>
                     Logout
                   </button>
                 </li>
