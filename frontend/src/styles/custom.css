@@ -35,3 +35,16 @@ body {
   padding: 4px;
   flex-shrink: 0;
 }
+.help-step-card {
+  border: 1px solid #e3edf5;
+  background-color: #f8fcff;
+  border-radius: 14px;
+  padding: 1rem;
+}
+.privacy-chip-list .badge {
+  font-size: 0.9rem;
+}
+.card h3,
+.card h4 {
+  font-weight: 700;
+}
