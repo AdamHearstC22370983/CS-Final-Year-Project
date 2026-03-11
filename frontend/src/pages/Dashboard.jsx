@@ -15,6 +15,7 @@ function Dashboard() {
   const [hasTakenCourse, setHasTakenCourse] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
 
   const handleCvChange = (e) => {
     setCvFile(e.target.files[0] || null);
@@ -59,19 +60,32 @@ function Dashboard() {
         throw new Error("Please upload both a CV and a Job Description.");
       }
 
-      setStatus("Uploading files and running analysis...");
+      setIsRunning(true);
 
+      setStatus("Uploading CV and extracting skills...");
       await uploadCvEntities();
+
+      setStatus("Uploading job description and extracting skills...");
       await uploadJdEntities();
+
+      setStatus("Comparing skills and building your latest gap snapshot...");
       await computeGap();
 
-      navigate(
-        `/results?experience_level=${experienceLevel}&has_taken_course=${hasTakenCourse}`
-      );
+      setStatus("Analysis complete. Redirecting to results...");
+
+      setTimeout(() => {
+        navigate(
+          `/results?experience_level=${experienceLevel}&has_taken_course=${hasTakenCourse}`
+        );
+      }, 500);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || "Analysis failed.");
       setStatus("");
+      setIsRunning(false);
+      return;
     }
+
+    setIsRunning(false);
   };
 
   return (
@@ -79,11 +93,11 @@ function Dashboard() {
       <div className="mb-4">
         <h1 className="mb-2">Dashboard</h1>
         <p className="text-muted mb-0">
-          Upload documents, answer guided questions, and run the recommendation workflow.
+          Upload documents, answer guided questions, and generate tailored course recommendations.
         </p>
       </div>
 
-      <div className="card shadow-sm border-0 mb-4">
+      <div className="card shadow-sm border-0 mb-4 dashboard-summary-card">
         <div className="card-body">
           <div className="fw-semibold mb-1">Signed in user</div>
           <div className="text-muted">
@@ -111,20 +125,49 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="mb-4">
-        <GuidedQuestions
-          experienceLevel={experienceLevel}
-          setExperienceLevel={setExperienceLevel}
-          hasTakenCourse={hasTakenCourse}
-          setHasTakenCourse={setHasTakenCourse}
-        />
+      <div className="row g-4 mb-4">
+        <div className="col-lg-8">
+          <GuidedQuestions
+            experienceLevel={experienceLevel}
+            setExperienceLevel={setExperienceLevel}
+            hasTakenCourse={hasTakenCourse}
+            setHasTakenCourse={setHasTakenCourse}
+          />
+        </div>
+
+        <div className="col-lg-4">
+          <div className="card shadow-sm border-0 h-100">
+            <div className="card-body">
+              <h5 className="card-title">Ready to Analyse</h5>
+              <p className="text-muted">
+                Make sure both files are selected before starting.
+              </p>
+
+              <div className="dashboard-checklist small">
+                <div className={`mb-2 ${cvFile ? "text-success" : "text-muted"}`}>
+                  {cvFile ? "✓" : "•"} CV selected
+                </div>
+                <div className={`mb-2 ${jdFile ? "text-success" : "text-muted"}`}>
+                  {jdFile ? "✓" : "•"} Job description selected
+                </div>
+                <div className="text-muted">
+                  • Guided questions are optional but improve recommendation tailoring
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {status && <div className="alert alert-info">{status}</div>}
       {error && <div className="alert alert-danger">{error}</div>}
 
-      <button className="btn btn-primary btn-lg" onClick={handleRunAnalysis}>
-        Run Analysis
+      <button
+        className="btn btn-primary btn-lg"
+        onClick={handleRunAnalysis}
+        disabled={isRunning}
+      >
+        {isRunning ? "Running Analysis..." : "Run Analysis"}
       </button>
     </div>
   );
