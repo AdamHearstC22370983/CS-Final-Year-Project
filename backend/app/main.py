@@ -3,6 +3,9 @@
 # This FastAPI app handles:
 # - user registration
 # - user login
+# - account data export
+# - password change
+# - account deletion
 # - CV / JD upload and text extraction
 # - entity extraction and storage
 # - gap analysis
@@ -25,7 +28,7 @@ from app.models.gap_snapshot import GapSnapshot
 from app.models.normalised_entity import NormalisedEntity
 from app.models.user import User
 
-from app.schemas.user_schema import UserCreate, UserLogin
+from app.schemas.user_schema import PasswordChangeRequest, UserCreate, UserLogin
 
 from app.services.ESCO.esco_normaliser import normalise_entity
 from app.services.catalog.catalog_ingest import ingest_catalog
@@ -81,9 +84,22 @@ def _norm(value: Any) -> str:
 
 # Canonicalise a list of missing entities before returning them to the frontend.
 # Duplicate values are removed while preserving order.
+# Generic low-value entities are filtered out so the user only sees meaningful gaps.
 def _canonicalize_missing_entities(values: List[str]) -> List[str]:
     output: List[str] = []
     seen = set()
+
+    blocked_entities = {
+        "initiative",
+        "build software",
+        "software development",
+        "development",
+        "coding",
+        "programming",
+        "teamwork",
+        "communication",
+        "problem solving",
+    }
 
     for value in values or []:
         cleaned = _norm(value)
@@ -91,6 +107,9 @@ def _canonicalize_missing_entities(values: List[str]) -> List[str]:
             continue
 
         cleaned = SYNONYMS.get(cleaned, cleaned)
+
+        if cleaned in blocked_entities:
+            continue
 
         if cleaned not in seen:
             seen.add(cleaned)
@@ -211,6 +230,108 @@ async def get_user_profile(user_id: int, db=Depends(get_db)):
         "username": user.username,
         "email": user.email,
     }
+
+
+# Export the signed-in user's account-related data as JSON-ready content.
+# This supports a user-facing "Download My Data" feature.
+@app.get("/users/{user_id}/export")
+async def export_user_data(user_id: int, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    cv_entities = (
+        db.query(CVEntity)
+        .filter(CVEntity.user_id == user_id)
+        .all()
+    )
+
+    normalised_entities = (
+        db.query(NormalisedEntity)
+        .filter(NormalisedEntity.user_id == user_id)
+        .all()
+    )
+
+    gap_snapshots = (
+        db.query(GapSnapshot)
+        .filter(GapSnapshot.user_id == user_id)
+        .order_by(GapSnapshot.created_at.desc())
+        .all()
+    )
+
+    return {
+        "account": {
+            "user_id": user.id,
+            "username": user.username,
+            "email": user.email,
+        },
+        "cv_entities": [
+            {
+                "id": row.id,
+                "entity_name": row.entity_name,
+            }
+            for row in cv_entities
+        ],
+        "normalised_entities": [
+            {
+                "id": row.id,
+                "original": row.original,
+                "normalised": row.normalised,
+                "uri": row.uri,
+                "source": row.source,
+                "entity_type": row.entity_type,
+            }
+            for row in normalised_entities
+        ],
+        "gap_snapshots": [
+            {
+                "id": row.id,
+                "missing_entities": row.missing_entities,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in gap_snapshots
+        ],
+    }
+
+
+# Change the signed-in user's password.
+# This verifies the current password before replacing it with a newly hashed one.
+@app.post("/users/{user_id}/change-password")
+async def change_user_password(user_id: int, payload: PasswordChangeRequest, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    if not payload.new_password or len(payload.new_password.strip()) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters long")
+
+    user.hashed_password = hash_password(payload.new_password.strip())
+    db.commit()
+
+    return {"message": "Password updated successfully"}
+
+
+# Delete the signed-in user's account and related user-owned data.
+# This removes user rows, CV entities, normalised entities, and stored gap snapshots.
+@app.delete("/users/{user_id}")
+async def delete_user_account(user_id: int, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.query(CVEntity).filter(CVEntity.user_id == user_id).delete()
+    db.query(NormalisedEntity).filter(NormalisedEntity.user_id == user_id).delete()
+    db.query(GapSnapshot).filter(GapSnapshot.user_id == user_id).delete()
+    db.delete(user)
+    db.commit()
+
+    return {"message": "Account and related user data deleted successfully"}
 
 
 # Upload CV endpoint.
@@ -472,6 +593,7 @@ async def recommend_courses(
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
+
     if not snapshot:
         return {"error": "No gap analysis found. Complete a skill gap test first."}
 
@@ -485,6 +607,7 @@ async def recommend_courses(
         experience_level=experience_level,
         has_taken_course=has_taken_course,
     )
+
     return {
         "user_id": user_id,
         "missing_entities": missing,
