@@ -10,3 +10,8 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     identifier: str
     password : str
+
+# Function used for changing account password
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
