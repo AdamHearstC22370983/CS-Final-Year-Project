@@ -36,6 +36,28 @@ main {
   display: block;
 }
 
+.skillgap-nav-list .skillgap-nav-item {
+  position: relative;
+}
+
+@media (min-width: 992px) {
+  .skillgap-nav-list .skillgap-nav-item + .skillgap-nav-item {
+    margin-left: 0.75rem;
+    padding-left: 0.9rem;
+  }
+
+  .skillgap-nav-list .skillgap-nav-item + .skillgap-nav-item::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1px;
+    height: 20px;
+    background-color: #d6e0ea;
+  }
+}
+
 .skillgap-nav .nav-link {
   color: #1f2d3d;
   font-weight: 500;
@@ -156,6 +178,10 @@ body[data-theme="dark"] .skillgap-nav {
   border-bottom: 1px solid #203348;
 }
 
+body[data-theme="dark"] .skillgap-nav-list .skillgap-nav-item + .skillgap-nav-item::before {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+
 body[data-theme="dark"] .skillgap-nav .nav-link {
   color: #eaf2fb;
 }
@@ -242,6 +268,12 @@ body[data-theme="dark"] .alert-danger {
   background-color: #4b1f26;
   border-color: #7a313d;
   color: #ffd9de;
+}
+
+body[data-theme="dark"] .alert-success {
+  background-color: #173c2d;
+  border-color: #246a4d;
+  color: #dcf8ea;
 }
 
 body[data-theme="dark"] .alert-warning {
