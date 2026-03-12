@@ -1,8 +1,7 @@
-//Navbar.jsx
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { clearCurrentUser, getCurrentUser } from "../services/auth";
 import brandLogo from "../assets/images/brand/skillgap-logo.png";
-//function to create a navbar on each page
+//Navbar.jsx - Used to display Navigation bar across pages
 function Navbar() {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
@@ -32,8 +31,8 @@ function Navbar() {
         </button>
 
         <div className="collapse navbar-collapse" id="mainNav">
-          <ul className="navbar-nav ms-auto align-items-lg-center">
-            <li className="nav-item">
+          <ul className="navbar-nav ms-auto align-items-lg-center skillgap-nav-list">
+            <li className="nav-item skillgap-nav-item">
               <NavLink className="nav-link" to="/">
                 Home
               </NavLink>
@@ -41,17 +40,17 @@ function Navbar() {
 
             {currentUser && (
               <>
-                <li className="nav-item">
+                <li className="nav-item skillgap-nav-item">
                   <NavLink className="nav-link" to="/dashboard">
                     Dashboard
                   </NavLink>
                 </li>
-                <li className="nav-item">
+                <li className="nav-item skillgap-nav-item">
                   <NavLink className="nav-link" to="/results">
                     Results
                   </NavLink>
                 </li>
-                <li className="nav-item">
+                <li className="nav-item skillgap-nav-item">
                   <NavLink className="nav-link" to="/account">
                     Account
                   </NavLink>
@@ -59,7 +58,7 @@ function Navbar() {
               </>
             )}
 
-            <li className="nav-item">
+            <li className="nav-item skillgap-nav-item">
               <NavLink className="nav-link" to="/help">
                 Help
               </NavLink>
@@ -67,8 +66,8 @@ function Navbar() {
 
             {!currentUser ? (
               <>
-                <li className="nav-item ms-lg-2">
-                  <NavLink className="btn btn-outline-primary btn-sm me-2 mt-2 mt-lg-0" to="/login">
+                <li className="nav-item ms-lg-3 mt-2 mt-lg-0">
+                  <NavLink className="btn btn-outline-primary btn-sm me-2" to="/login">
                     Login
                   </NavLink>
                 </li>
