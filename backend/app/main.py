@@ -6,6 +6,7 @@
 # - account data export
 # - password change
 # - account deletion
+# - history retrieval for stored gap snapshots
 # - CV / JD upload and text extraction
 # - entity extraction and storage
 # - gap analysis
@@ -18,6 +19,7 @@ from typing import Any, List, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import or_, text
 
 from app.models.CV_entity import CVEntity
@@ -137,6 +139,13 @@ def _clean_organization(value: Any) -> Optional[str]:
 
     return text_value or None
 
+def _extract_text_sync(upload_file, contents: bytes) -> str:
+    # Heavy file parsing runs here in a worker thread.
+    return extract_text_from_upload(upload_file, contents)
+
+def _extract_entities_sync(cleaned_text: str) -> dict:
+    # Heavy NLP/entity matching runs here in a worker thread.
+    return extract_entities(cleaned_text)
 
 # Root endpoint used as a quick health check.
 @app.get("/")
@@ -232,6 +241,43 @@ async def get_user_profile(user_id: int, db=Depends(get_db)):
     }
 
 
+# Return the signed-in user's stored gap-analysis history.
+# This powers the History page in the frontend.
+@app.get("/users/{user_id}/history")
+async def get_user_history(user_id: int, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    snapshots = (
+        db.query(GapSnapshot)
+        .filter(GapSnapshot.user_id == user_id)
+        .order_by(GapSnapshot.created_at.desc())
+        .all()
+    )
+
+    history = []
+    for snapshot in snapshots:
+        missing_entities = _canonicalize_missing_entities(snapshot.missing_entities or [])
+
+        history.append(
+            {
+                "snapshot_id": snapshot.id,
+                "created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
+                "missing_entities": missing_entities,
+                "missing_count": len(missing_entities),
+            }
+        )
+
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "history": history,
+        "history_count": len(history),
+    }
+
+
 # Export the signed-in user's account-related data as JSON-ready content.
 # This supports a user-facing "Download My Data" feature.
 @app.get("/users/{user_id}/export")
@@ -294,7 +340,6 @@ async def export_user_data(user_id: int, db=Depends(get_db)):
         ],
     }
 
-
 # Change the signed-in user's password.
 # This verifies the current password before replacing it with a newly hashed one.
 @app.post("/users/{user_id}/change-password")
@@ -312,7 +357,6 @@ async def change_user_password(user_id: int, payload: PasswordChangeRequest, db=
 
     user.hashed_password = hash_password(payload.new_password.strip())
     db.commit()
-
     return {"message": "Password updated successfully"}
 
 
@@ -333,7 +377,6 @@ async def delete_user_account(user_id: int, db=Depends(get_db)):
 
     return {"message": "Account and related user data deleted successfully"}
 
-
 # Upload CV endpoint.
 @app.post("/upload-cv")
 async def upload_cv(file: UploadFile = File(...)):
@@ -345,7 +388,6 @@ async def upload_cv(file: UploadFile = File(...)):
         "content_type": file.content_type,
         "status": "CV uploaded successfully",
     }
-
 
 # Upload Job Description endpoint.
 @app.post("/upload-jd")
@@ -359,7 +401,6 @@ async def upload_jd(file: UploadFile = File(...)):
         "status": "Job Description uploaded successfully",
     }
 
-
 # Extract raw text from an uploaded file.
 @app.post("/extract-text")
 async def extract_text(file: UploadFile = File(...)):
@@ -370,7 +411,6 @@ async def extract_text(file: UploadFile = File(...)):
         "filename": file.filename,
         "text": cleaned_text,
     }
-
 
 # Extract entities from an uploaded file.
 @app.post("/extract-entities")
@@ -384,15 +424,25 @@ async def extract_entities_endpoint(file: UploadFile = File(...)):
         "entities": extraction_result,
     }
 
-
-# Extract and save CV entities for a specific user.
 @app.post("/save-cv-entities")
-async def save_cv_entities_endpoint(user_id: int, file: UploadFile = File(...), db=Depends(get_db)):
+async def save_cv_entities_endpoint(
+    user_id: int,
+    file: UploadFile = File(...),
+    db=Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User with id {user_id} does not exist",
+        )
     contents = await file.read()
-    cleaned_text = extract_text_from_upload(file, contents)
-    extraction = extract_entities(cleaned_text)
 
-    entity_list = extraction["unique_entities"]
+    # Move file parsing and entity extraction off the main async request thread.
+    cleaned_text = await run_in_threadpool(_extract_text_sync, file, contents)
+    extraction = await run_in_threadpool(_extract_entities_sync, cleaned_text)
+
+    entity_list = extraction.get("unique_entities", [])
     result = save_cv_entities(db, user_id, entity_list)
 
     return {
@@ -400,15 +450,18 @@ async def save_cv_entities_endpoint(user_id: int, file: UploadFile = File(...), 
         "entities": entity_list,
     }
 
-
-# Extract and save Job Description entities.
 @app.post("/save-jd-entities")
-async def save_jd_entities_endpoint(file: UploadFile = File(...), db=Depends(get_db)):
+async def save_jd_entities_endpoint(
+    file: UploadFile = File(...),
+    db=Depends(get_db),
+):
     contents = await file.read()
-    cleaned_text = extract_text_from_upload(file, contents)
-    extraction = extract_entities(cleaned_text)
 
-    entity_list = extraction["unique_entities"]
+    # Move file parsing and entity extraction off the main async request thread.
+    cleaned_text = await run_in_threadpool(_extract_text_sync, file, contents)
+    extraction = await run_in_threadpool(_extract_entities_sync, cleaned_text)
+
+    entity_list = extraction.get("unique_entities", [])
     result = save_jd_entities(db, entity_list)
 
     return {
@@ -416,17 +469,32 @@ async def save_jd_entities_endpoint(file: UploadFile = File(...), db=Depends(get
         "entities": entity_list,
     }
 
-
 # Compute the gap between a user's CV entities and the current JD entities.
 @app.post("/compute-gap")
 async def compute_gap(user_id: int, db=Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=400, detail=f"User with id {user_id} does not exist")
+        raise HTTPException(
+            status_code=400,
+            detail=f"User with id {user_id} does not exist",
+        )
 
+    cv_count = db.query(CVEntity).filter(CVEntity.user_id == user_id).count()
+    jd_count = db.query(JDEntity).count()
+
+    if cv_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No CV entities found for this user. Please upload and analyse a CV first.",
+        )
+
+    if jd_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No job description entities found. Please upload and analyse a job description first.",
+        )
     missing = compute_missing_entities(db, user_id)
     missing = _canonicalize_missing_entities(missing)
-
     snapshot = GapSnapshot(user_id=user_id, missing_entities=missing)
     db.add(snapshot)
     db.commit()
@@ -438,7 +506,6 @@ async def compute_gap(user_id: int, db=Depends(get_db)):
         "count": len(missing),
         "snapshot_id": snapshot.id,
     }
-
 
 # Return the latest missing-entity snapshot for a given user.
 @app.get("/missing-entities")
@@ -512,7 +579,6 @@ async def normalise_entities(user_id: int, db=Depends(get_db)):
         "count": len(normalised_records),
     }
 
-
 # Import the local course catalog JSON file into the database.
 @app.post("/catalog/import-local")
 def import_catalog_local(db=Depends(get_db)):
@@ -529,7 +595,6 @@ def import_catalog_local(db=Depends(get_db)):
         "message": "Catalog import complete",
         "stats": {"kaggle_courses.json": stats},
     }
-
 
 # Search the local course catalog by query string.
 @app.get("/catalog/search")
