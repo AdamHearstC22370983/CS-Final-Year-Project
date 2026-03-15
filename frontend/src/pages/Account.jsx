@@ -3,7 +3,7 @@ import { clearCurrentUser, getCurrentUser } from "../services/auth";
 import { toggleTheme, getCurrentTheme } from "../services/theme";
 import { useEffect, useState } from "react";
 import api from "../services/api";
-//Account.jsx
+
 function Account() {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
@@ -126,7 +126,7 @@ function Account() {
       <div className="mb-4">
         <h1 className="mb-2">Account</h1>
         <p className="text-muted mb-0">
-          Manage your account details, appearance preference, and privacy controls.
+          Manage your account details, appearance, password, and account actions.
         </p>
       </div>
 
@@ -137,7 +137,7 @@ function Account() {
         <div className="col-lg-7">
           <div className="card shadow-sm border-0 mb-4">
             <div className="card-body p-4">
-              <h4 className="mb-3">Profile Info</h4>
+              <h4 className="mb-3">Profile Information</h4>
 
               <div className="mb-3">
                 <label className="form-label fw-semibold">Username</label>
@@ -173,10 +173,6 @@ function Account() {
               <button className="btn btn-outline-primary" onClick={handleThemeToggle}>
                 Switch to {theme === "dark" ? "Light Mode" : "Dark Mode"}
               </button>
-
-              <p className="text-muted small mt-3 mb-0">
-                Your theme preference is stored locally in your browser for future logins.
-              </p>
             </div>
           </div>
 
@@ -247,8 +243,8 @@ function Account() {
               </div>
 
               <p className="text-muted small mt-3 mb-0">
-                Download lets you export your user-linked data. Delete Account permanently removes
-                your account and related user-owned records.
+                Privacy, security, and data-handling explanations are available on the Help &
+                Privacy page.
               </p>
             </div>
           </div>
@@ -257,34 +253,23 @@ function Account() {
         <div className="col-lg-5">
           <div className="card shadow-sm border-0 mb-4">
             <div className="card-body p-4">
-              <h4 className="mb-3">Privacy Overview</h4>
-              <p className="mb-3">
-                Skillgap only stores the minimum information needed for account access such as:
-              </p>
-
-              <div className="privacy-chip-list d-flex flex-wrap gap-2 mb-3">
-                <span className="badge text-bg-light border px-3 py-2">Username</span>
-                <span className="badge text-bg-light border px-3 py-2">Email</span>
-                <span className="badge text-bg-light border px-3 py-2">Password</span>
-              </div>
-
-              <p className="text-muted small mb-0">
-                Passwords are encrypted. Uploaded CVs and Job Descriptions are used
-                to extract skills and generate recommendation results.
-              </p>
+              <h4 className="mb-3">Quick Overview</h4>
+              <ul className="text-muted small mb-0">
+                <li>Manage account basics here.</li>
+                <li>Update your password when needed.</li>
+                <li>Export or remove your user-linked data.</li>
+                <li>Use Help & Privacy for security and data explanations.</li>
+              </ul>
             </div>
           </div>
+
           <div className="card shadow-sm border-0">
             <div className="card-body p-4">
-              <h4 className="mb-3">Your Control</h4>
-              <p className="mb-2">
-                This project is designed around minimal data collection and user control.
+              <h4 className="mb-3">Need More Control?</h4>
+              <p className="text-muted mb-0">
+                This page focuses on practical account actions. For information about how data is
+                used, stored, and explained within the project, visit Help & Privacy.
               </p>
-              <ul className="text-muted small mb-0">
-                <li>You can also download your user-linked data.</li>
-                <li>You can also change your password or delete your account and your data.</li>
-                <li>You can log out at any time.</li>
-              </ul>
             </div>
           </div>
         </div>

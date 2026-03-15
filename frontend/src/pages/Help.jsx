@@ -4,7 +4,8 @@ function Help() {
       <div className="mb-4">
         <h1 className="mb-2">Help & Privacy</h1>
         <p className="text-muted mb-0">
-          Learn how Skillgap works, what data is used, and how recommendations are generated.
+          Learn how Skillgap works, how recommendations are created, and how account and analysis
+          data are handled.
         </p>
       </div>
 
@@ -35,7 +36,8 @@ function Help() {
               <div className="help-step-card mb-3">
                 <h5 className="mb-2">3. Identify missing skills</h5>
                 <p className="mb-0 text-muted">
-                  Skills present in the job description but not found in the CV are treated as missing.
+                  Skills present in the job description but not found in the CV are treated as
+                  missing.
                 </p>
               </div>
 
@@ -75,7 +77,7 @@ function Help() {
             </div>
           </div>
 
-          <div className="card shadow-sm border-0">
+          <div className="card shadow-sm border-0 mb-4">
             <div className="card-body p-4">
               <h3 className="mb-3">What “Matched Skills” Means</h3>
               <p className="mb-0">
@@ -84,33 +86,44 @@ function Help() {
               </p>
             </div>
           </div>
-        </div>
 
-        <div className="col-lg-4">
-          <div className="card shadow-sm border-0 mb-4">
+          <div className="card shadow-sm border-0">
             <div className="card-body p-4">
-              <h3 className="mb-3">Privacy Summary</h3>
+              <h3 className="mb-3">Security and Privacy</h3>
               <p>
-                Skillgap is designed to collect only the information needed to support account access
-                and recommendation generation.
+                Skillgap is designed around minimal data collection and practical user control. The
+                application stores only the information needed for account access and recommendation
+                generation.
               </p>
 
-              <h6 className="fw-semibold mt-4">Account data collected</h6>
-              <ul className="text-muted small">
+              <h5 className="mt-4 mb-2">Account data collected</h5>
+              <ul className="text-muted">
                 <li>Username</li>
                 <li>Email address</li>
                 <li>Hashed password</li>
               </ul>
 
-              <h6 className="fw-semibold mt-4">Analysis data used</h6>
-              <ul className="text-muted small">
+              <h5 className="mt-4 mb-2">Analysis data used</h5>
+              <ul className="text-muted">
                 <li>Uploaded CV content</li>
                 <li>Uploaded job description content</li>
                 <li>Extracted and missing skills</li>
+                <li>Stored gap snapshots for recommendation history</li>
+              </ul>
+
+              <h5 className="mt-4 mb-2">User controls</h5>
+              <ul className="text-muted mb-0">
+                <li>Download My Data</li>
+                <li>Change Password</li>
+                <li>Delete Account</li>
+                <li>Log Out</li>
+                <li>Theme preference toggle</li>
               </ul>
             </div>
           </div>
+        </div>
 
+        <div className="col-lg-4">
           <div className="card shadow-sm border-0 mb-4">
             <div className="card-body p-4">
               <h3 className="mb-3">Security Principles</h3>
@@ -119,7 +132,19 @@ function Help() {
                 <li>Password hashing</li>
                 <li>Protected frontend routes</li>
                 <li>Restricted development CORS configuration</li>
-                <li>Planned future support for stronger account controls</li>
+                <li>User-controlled account actions</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="card shadow-sm border-0 mb-4">
+            <div className="card-body p-4">
+              <h3 className="mb-3">Where to Manage Things</h3>
+              <ul className="text-muted small mb-0">
+                <li>Use Dashboard to upload files and run analysis.</li>
+                <li>Use Results to review missing skills and recommendations.</li>
+                <li>Use History to review earlier gap snapshots.</li>
+                <li>Use Account for actions like changing password or deleting your account.</li>
               </ul>
             </div>
           </div>
@@ -138,5 +163,4 @@ function Help() {
     </div>
   );
 }
-
 export default Help;
