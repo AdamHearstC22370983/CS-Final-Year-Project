@@ -13,7 +13,6 @@ function Dashboard() {
   const [jdFile, setJdFile] = useState(null);
   const [experienceLevel, setExperienceLevel] = useState("");
   const [hasTakenCourse, setHasTakenCourse] = useState("");
-  const [preferredLearningStyle, setPreferredLearningStyle] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [isRunning, setIsRunning] = useState(false);
@@ -76,7 +75,7 @@ function Dashboard() {
 
       setTimeout(() => {
         navigate(
-          `/results?experience_level=${experienceLevel}&has_taken_course=${hasTakenCourse}&preference=${preferredLearningStyle}`
+          `/results?experience_level=${experienceLevel}&has_taken_course=${hasTakenCourse}`
         );
       }, 500);
     } catch (err) {
