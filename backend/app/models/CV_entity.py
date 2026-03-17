@@ -1,9 +1,6 @@
-
 # CV_entity.py
-
 # Stores extracted entities from a user's CV.
 # Entities consist of skills, experience, qualifications, etc.
-
 #Linked to a User through user_id.
 
 from sqlalchemy import Column, Integer, String, ForeignKey
