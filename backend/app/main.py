@@ -8,6 +8,7 @@
 # - account deletion
 # - history retrieval for stored gap snapshots
 # - CV / JD upload and text extraction
+# - Manual skill confirmation post-analysis
 # - entity extraction and storage
 # - gap analysis
 # - entity normalisation
@@ -16,7 +17,7 @@
 
 from pathlib import Path
 from typing import Any, List, Optional
-
+from pydantic import BaseModel
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
@@ -29,7 +30,7 @@ from app.models.db import Base, engine, get_db
 from app.models.gap_snapshot import GapSnapshot
 from app.models.normalised_entity import NormalisedEntity
 from app.models.user import User
-
+from app.models.confirmed_skill import ConfirmedSkill
 from app.schemas.user_schema import PasswordChangeRequest, UserCreate, UserLogin
 
 from app.services.ESCO.esco_normaliser import normalise_entity
@@ -41,14 +42,12 @@ from app.services.recommender.course_ranker import rank_courses_for_missing
 from app.services.text_extraction import extract_text_from_upload
 from app.utils.security import hash_password, verify_password
 
-
 # Create the FastAPI application instance.
 app = FastAPI(
     title="Skillgap Backend API",
     description="API for CV/JD parsing, entity extraction, gap analysis, ESCO-style normalization, and DB-backed course recommendations.",
     version="0.1.0",
 )
-
 # Allow the React frontend to call the FastAPI backend during development.
 app.add_middleware(
     CORSMiddleware,
@@ -67,7 +66,6 @@ app.add_middleware(
 # create_all() does not alter existing tables, it only creates missing ones.
 Base.metadata.create_all(bind=engine)
 
-
 # Synonym mapping used to make user-facing missing entities more consistent.
 SYNONYMS = {
     "rest": "rest api",
@@ -78,6 +76,8 @@ SYNONYMS = {
     "k8s": "kubernetes",
 }
 
+class ConfirmedSkillRequest(BaseModel):
+    skill_name: str
 
 # Normalise a value into lowercase trimmed text.
 def _norm(value: Any) -> str:
@@ -119,6 +119,35 @@ def _canonicalize_missing_entities(values: List[str]) -> List[str]:
 
     return output
 
+# Return a user's confirmed skills as a canonicalised set.
+def _get_confirmed_skill_set(db, user_id: int) -> set[str]:
+    rows = (
+        db.query(ConfirmedSkill.skill_name)
+        .filter(ConfirmedSkill.user_id == user_id)
+        .all()
+    )
+
+    confirmed = set()
+
+    for row in rows:
+        value = _norm(row[0])
+        if not value:
+            continue
+
+        value = SYNONYMS.get(value, value)
+        confirmed.add(value)
+
+    return confirmed
+
+# Remove confirmed skills from a missing-entity list after canonicalisation.
+def _apply_confirmed_skill_adjustments(db, user_id: int, missing_values: List[str]) -> List[str]:
+    canonical_missing = _canonicalize_missing_entities(missing_values)
+    confirmed = _get_confirmed_skill_set(db, user_id)
+
+    if not confirmed:
+        return canonical_missing
+
+    return [value for value in canonical_missing if value not in confirmed]
 
 # Clean organization text before returning it in API responses.
 def _clean_organization(value: Any) -> Optional[str]:
@@ -293,6 +322,13 @@ async def export_user_data(user_id: int, db=Depends(get_db)):
         .all()
     )
 
+    confirmed_skills = (
+    db.query(ConfirmedSkill)
+    .filter(ConfirmedSkill.user_id == user_id)
+    .order_by(ConfirmedSkill.skill_name.asc())
+    .all()
+    )   
+
     normalised_entities = (
         db.query(NormalisedEntity)
         .filter(NormalisedEntity.user_id == user_id)
@@ -305,7 +341,6 @@ async def export_user_data(user_id: int, db=Depends(get_db)):
         .order_by(GapSnapshot.created_at.desc())
         .all()
     )
-
     return {
         "account": {
             "user_id": user.id,
@@ -318,6 +353,14 @@ async def export_user_data(user_id: int, db=Depends(get_db)):
                 "entity_name": row.entity_name,
             }
             for row in cv_entities
+        ],
+        "confirmed_skills": [
+            {
+                "id": row.id,
+                "skill_name": row.skill_name,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in confirmed_skills
         ],
         "normalised_entities": [
             {
@@ -372,6 +415,7 @@ async def delete_user_account(user_id: int, db=Depends(get_db)):
     db.query(CVEntity).filter(CVEntity.user_id == user_id).delete()
     db.query(NormalisedEntity).filter(NormalisedEntity.user_id == user_id).delete()
     db.query(GapSnapshot).filter(GapSnapshot.user_id == user_id).delete()
+    db.query(ConfirmedSkill).filter(ConfirmedSkill.user_id == user_id).delete()
     db.delete(user)
     db.commit()
 
@@ -474,27 +518,11 @@ async def save_jd_entities_endpoint(
 async def compute_gap(user_id: int, db=Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=400,
-            detail=f"User with id {user_id} does not exist",
-        )
+        raise HTTPException(status_code=400, detail=f"User with id {user_id} does not exist")
 
-    cv_count = db.query(CVEntity).filter(CVEntity.user_id == user_id).count()
-    jd_count = db.query(JDEntity).count()
-
-    if cv_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="No CV entities found for this user. Please upload and analyse a CV first.",
-        )
-
-    if jd_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="No job description entities found. Please upload and analyse a job description first.",
-        )
     missing = compute_missing_entities(db, user_id)
-    missing = _canonicalize_missing_entities(missing)
+    missing = _apply_confirmed_skill_adjustments(db, user_id, missing)
+
     snapshot = GapSnapshot(user_id=user_id, missing_entities=missing)
     db.add(snapshot)
     db.commit()
@@ -516,15 +544,13 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
-
     if not snapshot:
         return {
             "user_id": user_id,
             "missing_entities": [],
             "count": 0,
         }
-
-    missing = _canonicalize_missing_entities(snapshot.missing_entities or [])
+    missing = _apply_confirmed_skill_adjustments(db, user_id, snapshot.missing_entities or [])
 
     return {
         "user_id": user_id,
@@ -534,6 +560,112 @@ async def get_missing_entities(user_id: int, db=Depends(get_db)):
         "created_at": snapshot.created_at,
     }
 
+# Return the signed-in user's manually confirmed skills.
+@app.get("/users/{user_id}/confirmed-skills")
+async def get_confirmed_skills(user_id: int, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    rows = (
+        db.query(ConfirmedSkill)
+        .filter(ConfirmedSkill.user_id == user_id)
+        .order_by(ConfirmedSkill.skill_name.asc())
+        .all()
+    )
+
+    skills = []
+    for row in rows:
+        value = _norm(row.skill_name)
+        value = SYNONYMS.get(value, value)
+        if value:
+            skills.append(value)
+
+    # Remove duplicates while preserving order.
+    deduped = []
+    seen = set()
+    for skill in skills:
+        if skill not in seen:
+            seen.add(skill)
+            deduped.append(skill)
+
+    return {
+        "user_id": user_id,
+        "confirmed_skills": deduped,
+        "count": len(deduped),
+    }
+
+# Manually confirm that the user already has a missing skill.
+@app.post("/users/{user_id}/confirmed-skills")
+async def add_confirmed_skill(user_id: int, payload: ConfirmedSkillRequest, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    skill_name = _norm(payload.skill_name)
+    skill_name = SYNONYMS.get(skill_name, skill_name)
+
+    if not skill_name:
+        raise HTTPException(status_code=400, detail="Skill name is required")
+    # Check if the skill is already confirmed for this user to prevent duplicates.
+    existing = (
+        db.query(ConfirmedSkill)
+        .filter(
+            ConfirmedSkill.user_id == user_id,
+            ConfirmedSkill.skill_name == skill_name,
+        )
+        .first()
+    )
+
+    if existing:
+        return {
+            "message": "Skill already confirmed",
+            "user_id": user_id,
+            "skill_name": skill_name,
+        }
+    row = ConfirmedSkill(
+        user_id=user_id,
+        skill_name=skill_name,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    return {
+        "message": "Skill confirmed successfully",
+        "user_id": user_id,
+        "skill_name": skill_name,
+        "id": row.id,
+    }
+
+# Undo/remove a previously confirmed skill.
+@app.delete("/users/{user_id}/confirmed-skills")
+async def remove_confirmed_skill(user_id: int, skill_name: str, db=Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    cleaned_skill = _norm(skill_name)
+    cleaned_skill = SYNONYMS.get(cleaned_skill, cleaned_skill)
+
+    row = (
+        db.query(ConfirmedSkill)
+        .filter(
+            ConfirmedSkill.user_id == user_id,
+            ConfirmedSkill.skill_name == cleaned_skill,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Confirmed skill not found")
+
+    db.delete(row)
+    db.commit()
+
+    return {
+        "message": "Confirmed skill removed",
+        "user_id": user_id,
+        "skill_name": cleaned_skill,
+    }
 
 # Normalise CV and JD entities using the ESCO-style normaliser.
 @app.post("/normalise-entities")
@@ -658,11 +790,10 @@ async def recommend_courses(
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
-
     if not snapshot:
         return {"error": "No gap analysis found. Complete a skill gap test first."}
 
-    missing = _canonicalize_missing_entities(snapshot.missing_entities or [])
+    missing = _apply_confirmed_skill_adjustments(db, user_id, snapshot.missing_entities or [])
 
     ranked = rank_courses_for_missing(
         db=db,
