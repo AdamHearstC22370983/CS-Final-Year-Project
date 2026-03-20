@@ -1,11 +1,8 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
-import { getCurrentUser } from "../services/auth";
 import { toTitleCaseSkill } from "../utils/formatters";
 
 function History() {
-  const currentUser = getCurrentUser();
-
   const [history, setHistory] = useState([]);
   const [historyCount, setHistoryCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -16,13 +13,9 @@ function History() {
     setError("");
 
     try {
-      if (!currentUser?.user_id) {
-        throw new Error("No signed-in user found.");
-      }
-
-      const response = await api.get(`/users/${currentUser.user_id}/history`);
-      setHistory(response.data.history || []);
-      setHistoryCount(response.data.history_count || 0);
+      const response = await api.get("/me/history");
+      setHistory(response.data?.history || []);
+      setHistoryCount(response.data?.history_count || 0);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || "Failed to load history.");
     } finally {
@@ -117,4 +110,5 @@ function History() {
     </div>
   );
 }
+
 export default History;

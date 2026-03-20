@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import UploadCard from "../components/UploadCard";
 import GuidedQuestions from "../components/GuidedQuestions";
-import { getCurrentUser } from "../services/auth";
+import { getCurrentUser, isLoggedIn } from "../services/auth";
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -29,7 +29,7 @@ function Dashboard() {
     const formData = new FormData();
     formData.append("file", cvFile);
 
-    await api.post(`/save-cv-entities?user_id=${currentUser.user_id}`, formData, {
+    await api.post("/analysis/save-cv-entities", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   };
@@ -38,13 +38,13 @@ function Dashboard() {
     const formData = new FormData();
     formData.append("file", jdFile);
 
-    await api.post("/save-jd-entities", formData, {
+    await api.post("/analysis/save-jd-entities", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   };
 
   const computeGap = async () => {
-    await api.post(`/compute-gap?user_id=${currentUser.user_id}`);
+    await api.post("/analysis/compute-gap");
   };
 
   const handleRunAnalysis = async () => {
@@ -52,8 +52,8 @@ function Dashboard() {
     setError("");
 
     try {
-      if (!currentUser?.user_id) {
-        throw new Error("No signed-in user found.");
+      if (!isLoggedIn()) {
+        throw new Error("You must be signed in to run an analysis.");
       }
 
       if (!cvFile || !jdFile) {
@@ -73,19 +73,17 @@ function Dashboard() {
 
       setStatus("Analysis complete. Redirecting to results...");
 
-      setTimeout(() => {
-        navigate(
-          `/results?experience_level=${experienceLevel}&has_taken_course=${hasTakenCourse}`
-        );
-      }, 500);
+      navigate(
+        `/results?experience_level=${encodeURIComponent(
+          experienceLevel
+        )}&has_taken_course=${encodeURIComponent(hasTakenCourse)}`
+      );
     } catch (err) {
       setError(err.response?.data?.detail || err.message || "Analysis failed.");
       setStatus("");
+    } finally {
       setIsRunning(false);
-      return;
     }
-
-    setIsRunning(false);
   };
 
   return (
@@ -103,7 +101,8 @@ function Dashboard() {
           <div>
             <div className="fw-semibold mb-1">Signed in user</div>
             <div className="text-muted">
-              {currentUser?.username} ({currentUser?.email})
+              {currentUser?.username || "User"}
+              {currentUser?.email ? ` (${currentUser.email})` : ""}
             </div>
           </div>
 
@@ -123,7 +122,7 @@ function Dashboard() {
             <div>
               <h4 className="mb-1">Upload your documents</h4>
               <p className="text-muted mb-0">
-                Add both a CV and a target job description to begin the comparison.
+                Add both a CV and Job Description to begin your skill gap comparison.
               </p>
             </div>
           </div>
@@ -137,6 +136,7 @@ function Dashboard() {
             onFileChange={handleCvChange}
           />
         </div>
+
         <div className="col-lg-6">
           <UploadCard
             title="Upload Job Description"
@@ -154,7 +154,7 @@ function Dashboard() {
             <div>
               <h4 className="mb-1">Answer a few guided questions</h4>
               <p className="text-muted mb-0">
-                These are optional, but they help the system shape the recommendation experience.
+                These are optional, but they do help the system shape your recommendation experience.
               </p>
             </div>
           </div>
@@ -223,4 +223,5 @@ function Dashboard() {
     </div>
   );
 }
+
 export default Dashboard;

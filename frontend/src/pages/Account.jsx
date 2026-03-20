@@ -1,19 +1,20 @@
 import { useNavigate } from "react-router-dom";
-import { clearCurrentUser, getCurrentUser } from "../services/auth";
+import { clearCurrentUser, getCurrentUser, setCurrentUser } from "../services/auth";
 import { toggleTheme, getCurrentTheme } from "../services/theme";
 import { useEffect, useState } from "react";
 import api from "../services/api";
 
 function Account() {
   const navigate = useNavigate();
-  const currentUser = getCurrentUser();
 
+  const [currentUser, setLocalCurrentUser] = useState(getCurrentUser());
   const [theme, setTheme] = useState(getCurrentTheme());
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   const [passwordForm, setPasswordForm] = useState({
     current_password: "",
@@ -30,6 +31,25 @@ function Account() {
     return () => {
       window.removeEventListener("skillgap-theme-change", handleThemeChange);
     };
+  }, []);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      setIsLoadingProfile(true);
+      setError("");
+
+      try {
+        const response = await api.get("/me");
+        setLocalCurrentUser(response.data);
+        setCurrentUser(response.data);
+      } catch (err) {
+        setError(err.response?.data?.detail || "Failed to load account details.");
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    loadProfile();
   }, []);
 
   const handleLogout = () => {
@@ -55,14 +75,14 @@ function Account() {
     setIsDownloading(true);
 
     try {
-      const response = await api.get(`/users/${currentUser.user_id}/export`);
+      const response = await api.get("/me/export");
       const dataStr = JSON.stringify(response.data, null, 2);
       const blob = new Blob([dataStr], { type: "application/json" });
       const url = window.URL.createObjectURL(blob);
 
       const link = document.createElement("a");
       link.href = url;
-      link.download = `skillgap-user-${currentUser.user_id}-data.json`;
+      link.download = `skillgap-user-data.json`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -83,7 +103,7 @@ function Account() {
     setIsChangingPassword(true);
 
     try {
-      await api.post(`/users/${currentUser.user_id}/change-password`, passwordForm);
+      await api.post("/me/change-password", passwordForm);
 
       setPasswordForm({
         current_password: "",
@@ -112,7 +132,7 @@ function Account() {
     setIsDeleting(true);
 
     try {
-      await api.delete(`/users/${currentUser.user_id}`);
+      await api.delete("/me");
       clearCurrentUser();
       navigate("/register");
     } catch (err) {
@@ -132,6 +152,7 @@ function Account() {
 
       {message && <div className="alert alert-success">{message}</div>}
       {error && <div className="alert alert-danger">{error}</div>}
+      {isLoadingProfile && <div className="alert alert-info">Loading account details...</div>}
 
       <div className="row g-4">
         <div className="col-lg-7">
@@ -166,9 +187,7 @@ function Account() {
           <div className="card shadow-sm border-0 mb-4">
             <div className="card-body p-4">
               <h4 className="mb-3">Appearance</h4>
-              <p className="text-muted">
-                Toggle between light and dark mode.
-              </p>
+              <p className="text-muted">Toggle between light and dark mode.</p>
 
               <button className="btn btn-outline-primary" onClick={handleThemeToggle}>
                 Switch to {theme === "dark" ? "Light Mode" : "Dark Mode"}
@@ -243,7 +262,7 @@ function Account() {
               </div>
 
               <p className="text-muted small mt-3 mb-0">
-                Privacy, security, and data-handling explanations are available on the Help &
+                Privacy, security, and data-handling explanations are available on the Help &amp;
                 Privacy page.
               </p>
             </div>
@@ -258,7 +277,7 @@ function Account() {
                 <li>Manage account basics here.</li>
                 <li>Update your password when needed.</li>
                 <li>Export or remove your user-linked data.</li>
-                <li>Use Help & Privacy for security and data explanations.</li>
+                <li>Use Help &amp; Privacy for security and data explanations.</li>
               </ul>
             </div>
           </div>
@@ -267,8 +286,8 @@ function Account() {
             <div className="card-body p-4">
               <h4 className="mb-3">Need More Control?</h4>
               <p className="text-muted mb-0">
-                This page focuses on practical account actions. For information about how data is
-                used, stored, and explained within the project, visit Help & Privacy.
+                For information about how data is
+                used, stored, and explained within the project, visit Help &amp; Privacy.
               </p>
             </div>
           </div>
@@ -277,4 +296,5 @@ function Account() {
     </div>
   );
 }
+
 export default Account;

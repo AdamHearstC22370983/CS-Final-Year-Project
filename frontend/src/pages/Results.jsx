@@ -1,13 +1,10 @@
-// Results.jsx - Shows missing skills with manual confirmation and recommended courses.
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import RecommendationCard from "../components/RecommendationCard";
-import { getCurrentUser } from "../services/auth";
 
 function Results() {
   const [searchParams] = useSearchParams();
-  const currentUser = getCurrentUser();
 
   const experienceLevel = searchParams.get("experience_level") || "";
   const hasTakenCourse = searchParams.get("has_taken_course") || "";
@@ -26,30 +23,31 @@ function Results() {
     setSuccessMessage("");
 
     try {
-      if (!currentUser?.user_id) {
-        throw new Error("No signed-in user found.");
-      }
-
       const [missingResponse, recommendationResponse, confirmedResponse] = await Promise.all([
-        api.get(`/missing-entities?user_id=${currentUser.user_id}`),
-        api.get("/recommend-courses", {
+        api.get("/analysis/missing-entities"),
+        api.get("/analysis/recommend-courses", {
           params: {
-            user_id: currentUser.user_id,
             top_n: 10,
             use_cosine: true,
             experience_level: experienceLevel || undefined,
             has_taken_course:
-              hasTakenCourse === ""
-                ? undefined
-                : hasTakenCourse === "true",
+              hasTakenCourse === "" ? undefined : hasTakenCourse === "true",
           },
         }),
-        api.get(`/users/${currentUser.user_id}/confirmed-skills`),
+        api.get("/me/confirmed-skills"),
       ]);
 
-      setMissingEntities(missingResponse.data.missing_entities || []);
-      setRecommendations(recommendationResponse.data.recommendations || []);
-      setConfirmedSkills(confirmedResponse.data.confirmed_skills || []);
+      const recommendationData = recommendationResponse.data || {};
+
+      if (recommendationData.error) {
+        setRecommendations([]);
+        setError(recommendationData.error);
+      } else {
+        setRecommendations(recommendationData.recommendations || []);
+      }
+
+      setMissingEntities(missingResponse.data?.missing_entities || []);
+      setConfirmedSkills(confirmedResponse.data?.confirmed_skills || []);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || "Failed to load results.");
     } finally {
@@ -58,14 +56,16 @@ function Results() {
   };
 
   const handleConfirmSkill = async (skill) => {
-    if (!currentUser?.user_id || !skill) return;
+    if (!skill) {
+      return;
+    }
 
     setActionLoading(skill);
     setError("");
     setSuccessMessage("");
 
     try {
-      await api.post(`/users/${currentUser.user_id}/confirmed-skills`, {
+      await api.post("/me/confirmed-skills", {
         skill_name: skill,
       });
 
@@ -79,21 +79,25 @@ function Results() {
   };
 
   const handleUndoSkill = async (skill) => {
-    if (!currentUser?.user_id || !skill) return;
+    if (!skill) {
+      return;
+    }
 
     setActionLoading(skill);
     setError("");
     setSuccessMessage("");
 
     try {
-      await api.delete(`/users/${currentUser.user_id}/confirmed-skills/`, {
+      await api.delete("/me/confirmed-skills", {
         params: { skill_name: skill },
       });
 
       setSuccessMessage(`Removed confirmation for "${skill}".`);
       await loadResults();
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || "Failed to remove confirmation.");
+      setError(
+        err.response?.data?.detail || err.message || "Failed to remove confirmation."
+      );
     } finally {
       setActionLoading("");
     }
@@ -116,7 +120,7 @@ function Results() {
       {error && <div className="alert alert-danger">{error}</div>}
       {successMessage && <div className="alert alert-success">{successMessage}</div>}
 
-      {!loading && !error && (
+      {!loading && (
         <>
           <div className="row g-4 mb-4">
             <div className="col-lg-7">
@@ -141,10 +145,7 @@ function Results() {
                   ) : (
                     <div className="results-skill-list">
                       {missingEntities.map((skill) => (
-                        <div
-                          key={skill}
-                          className="results-skill-row"
-                        >
+                        <div key={skill} className="results-skill-row">
                           <div className="results-skill-name">{skill}</div>
 
                           <div className="results-skill-actions">
@@ -180,16 +181,11 @@ function Results() {
                   </div>
 
                   {confirmedSkills.length === 0 ? (
-                    <div className="text-muted">
-                      No manually confirmed skills yet.
-                    </div>
+                    <div className="text-muted">No manually confirmed skills yet.</div>
                   ) : (
                     <div className="results-skill-list">
                       {confirmedSkills.map((skill) => (
-                        <div
-                          key={skill}
-                          className="results-skill-row"
-                        >
+                        <div key={skill} className="results-skill-row">
                           <div className="results-skill-name">{skill}</div>
 
                           <div className="results-skill-actions">
@@ -232,4 +228,5 @@ function Results() {
     </div>
   );
 }
+
 export default Results;

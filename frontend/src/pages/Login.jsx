@@ -1,11 +1,12 @@
-//Login.jsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../services/api";
-import { saveCurrentUser } from "../services/auth";
+import { setAuthSession } from "../services/auth";
 
+// Login page using JWT session storage from the backend login response.
 function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [formData, setFormData] = useState({
     identifier: "",
@@ -13,6 +14,9 @@ function Login() {
   });
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const redirectTo = location.state?.from?.pathname || "/dashboard";
 
   const handleChange = (e) => {
     setFormData((prev) => ({
@@ -25,20 +29,22 @@ function Login() {
     e.preventDefault();
     setError("");
     setMessage("");
+    setIsSubmitting(true);
 
     try {
       const response = await api.post("/login", formData);
-      const user = response.data?.user;
 
-      if (!user) {
-        throw new Error("Login response did not include user details.");
+      if (!response.data?.access_token || !response.data?.user) {
+        throw new Error("Login response did not include token and user details.");
       }
 
-      saveCurrentUser(user);
+      setAuthSession(response.data);
       setMessage("Login successful.");
-      navigate("/dashboard");
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(err.response?.data?.detail || err.message || "Login failed.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -81,8 +87,8 @@ function Login() {
                 {message && <div className="alert alert-success">{message}</div>}
                 {error && <div className="alert alert-danger">{error}</div>}
 
-                <button type="submit" className="btn btn-primary">
-                  Sign In
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  {isSubmitting ? "Signing In..." : "Sign In"}
                 </button>
               </form>
             </div>
@@ -92,4 +98,5 @@ function Login() {
     </div>
   );
 }
+
 export default Login;
