@@ -1,7 +1,8 @@
 # Skillgap
-## Student Number: C22370983
-## Name: Adam Kerslake Hearst
-## TU Dublin - TU856/4
+---
+### Student Number: C22370983
+### Name: Adam Kerslake Hearst
+### TU Dublin - TU856/4
 Skillgap is a full-stack web application that helps users identify skill gaps between their CV and a target job description, then recommends relevant courses to help bridge those gaps.
 
 The project is designed as an MVP focused on practical upskilling:
