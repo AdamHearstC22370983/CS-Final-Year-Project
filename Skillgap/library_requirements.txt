@@ -1,0 +1,97 @@
+==============================
+Skillgap - Library Requirements
+==============================
+
+The following libraries are used to run the current Skillgap project.
+
+-------------------------------------
+Core Framework & API
+-------------------------------------
+- fastapi               - Web framework for building the backend API
+- uvicorn               - ASGI server used to run the FastAPI application
+- starlette             - FastAPI dependency (installed automatically)
+
+-------------------------------------
+Database & ORM
+-------------------------------------
+- sqlalchemy            - ORM for database models and queries
+- psycopg2-binary       - PostgreSQL database connector
+- alembic               - Optional database migration tool
+
+-------------------------------------
+Security & Authentication
+-------------------------------------
+- python-jose           - JWT token creation and verification
+- bcrypt                - Password hashing backend
+- passlib[bcrypt]       - Password hashing utilities
+  Recommended version pairing:
+  - passlib==1.7.4
+  - bcrypt==4.0.1
+
+-------------------------------------
+File Upload & Validation
+-------------------------------------
+- python-multipart      - Required for file uploads in FastAPI
+- pydantic              - Request/response schema validation
+
+-------------------------------------
+PDF / DOCX Text Extraction
+-------------------------------------
+- pdfplumber            - Extract text from PDF files
+- python-docx           - Extract text from DOCX files
+
+-------------------------------------
+NLP & Entity Extraction
+-------------------------------------
+- spacy                 - NLP processing and entity extraction
+- spacy-transformers    - Optional, only if transformer-based spaCy models are used
+- nltk                  - Optional tokenisation / stopword support
+
+-------------------------------------
+HTTP Requests / External APIs
+-------------------------------------
+- requests              - Used for ESCO API integration and external HTTP calls
+
+-------------------------------------
+Frontend / Local Development
+-------------------------------------
+- node.js               - Required to run the React frontend
+- npm                   - Package manager for the frontend
+
+-------------------------------------
+Testing & Development Tools (Optional)
+-------------------------------------
+- pytest                - Unit and integration testing
+- pytest-asyncio        - Testing async FastAPI endpoints
+- httpx                 - Testing HTTP endpoints and API calls
+
+-------------------------------------
+Notes
+-------------------------------------
+- The main runnable version of the project is inside the Skillgap/ directory.
+- The backend and frontend can be launched together using:
+  - start-skillgap.ps1   (Windows)
+  - start-skillgap.sh    (Mac/Linux)
+- The frontend is run with:
+  - npm run dev
+- The backend is run with:
+  - uvicorn app.main:app --reload
+
+-------------------------------------
+Recommended Python Package List
+-------------------------------------
+A typical backend install may include:
+
+- fastapi
+- uvicorn
+- sqlalchemy
+- psycopg2-binary
+- python-jose
+- bcrypt==4.0.1
+- passlib[bcrypt]==1.7.4
+- pdfplumber
+- python-docx
+- spacy
+- requests
+- pydantic
+- python-multipart
