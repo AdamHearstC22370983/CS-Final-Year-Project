@@ -21,9 +21,9 @@ from typing import Any, List, Optional
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from sqlalchemy import or_, text
+from sqlalchemy import text
 
 from app.models.CV_entity import CVEntity
 from app.models.JD_entity import JDEntity
@@ -87,6 +87,7 @@ SYNONYMS = {
 }
 # OAuth2 bearer token scheme for JWT auth.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+security = HTTPBearer()
 
 # Request body for confirmed-skill actions.
 class ConfirmedSkillRequest(BaseModel):
@@ -115,16 +116,31 @@ def _validate_password_strength(password: str) -> str:
     return cleaned
 
 # Resolve the currently authenticated user from the JWT token.
-def _get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)) -> User:
-    user_id = decode_access_token(token)
-    # if the token is invalid or expired, decode_access_token will return None, which we check for here
-    if not user_id:
+# Resolve the signed-in user from the bearer token.
+def _get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db=Depends(get_db),
+):
+    token = credentials.credentials
+    payload = decode_access_token(token)
+
+    if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    user_id = payload.get("sub")
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token missing user subject")
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token subject")
+
+    user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
-        raise HTTPException(status_code=401, detail="User not found for token")
+        raise HTTPException(status_code=401, detail="User not found")
 
     return user
 
@@ -148,6 +164,7 @@ def _canonicalize_missing_entities(values: List[str]) -> List[str]:
         "programming",
         "teamwork",
         "communication",
+        "collaboration",
         "problem solving",
     }
     # for loop to iterate through values, clena and canonicalise them
@@ -245,15 +262,25 @@ def test_database(db=Depends(get_db)):
 async def register_user(payload: UserCreate, db=Depends(get_db)):
     username = payload.username.strip()
     email = payload.email.strip().lower()
-    password = _validate_password_strength(payload.password)
+    password = payload.password
 
-    existing_username = db.query(User).filter(User.username == username).first()
-    if existing_username:
-        raise HTTPException(status_code=400, detail="Username already taken")
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=400,
+            detail="Password is too long. Please use a shorter password.",
+        )
 
-    existing_email = db.query(User).filter(User.email == email).first()
-    if existing_email:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    existing_user = (
+        db.query(User)
+        .filter((User.username == username) | (User.email == email))
+        .first()
+    )
+
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Username or email already exists",
+        )
 
     new_user = User(
         username=username,
@@ -265,39 +292,29 @@ async def register_user(payload: UserCreate, db=Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    return {
-        "message": "User created successfully",
-        "user_id": new_user.id,
-        "username": new_user.username,
-        "email": new_user.email,
-    }
+    return {"message": "User registered successfully"}
 
 # Sign in using either username or email plus password.
 @app.post("/login", response_model=TokenResponse)
 async def login_user(payload: UserLogin, db=Depends(get_db)):
     identifier = payload.identifier.strip()
-    # look up the user by username or email
+
     user = (
         db.query(User)
-        .filter(
-            or_(
-                User.username == identifier,
-                User.email == identifier,
-            )
-        )
+        .filter((User.username == identifier) | (User.email == identifier))
         .first()
     )
-    # verify the password and return a JWT access token if valid
-    if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = create_access_token(subject=str(user.id))
-    # return the token along with user info
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid username/email or password")
+
+    access_token = create_access_token(data={"sub": str(user.id)})
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
-            "user_id": user.id,
+            "id": user.id,
             "username": user.username,
             "email": user.email,
         },
@@ -422,16 +439,42 @@ async def change_user_password(
     return {"message": "Password updated successfully"}
 
 # Delete the signed-in user's account and related user-owned data.
+# Delete the signed-in user account and all user-linked data.
 @app.delete("/me")
-async def delete_user_account(current_user: User = Depends(_get_current_user), db=Depends(get_db)):
-    db.query(CVEntity).filter(CVEntity.user_id == current_user.id).delete()
-    db.query(NormalisedEntity).filter(NormalisedEntity.user_id == current_user.id).delete()
-    db.query(GapSnapshot).filter(GapSnapshot.user_id == current_user.id).delete()
-    db.query(ConfirmedSkill).filter(ConfirmedSkill.user_id == current_user.id).delete()
-    db.delete(current_user)
-    db.commit()
+async def delete_my_account(
+    current_user: User = Depends(_get_current_user),
+    db=Depends(get_db),
+):
+    try:
+        # Delete user-linked child rows first to satisfy foreign key constraints.
+        db.query(GapSnapshot).filter(
+            GapSnapshot.user_id == current_user.id
+        ).delete()
 
-    return {"message": "Account and related user data deleted successfully"}
+        db.query(ConfirmedSkill).filter(
+            ConfirmedSkill.user_id == current_user.id
+        ).delete()
+
+        db.query(NormalisedEntity).filter(
+            NormalisedEntity.user_id == current_user.id
+        ).delete()
+
+        db.query(CVEntity).filter(
+            CVEntity.user_id == current_user.id
+        ).delete()
+
+        # Finally delete the user row itself.
+        db.query(User).filter(
+            User.id == current_user.id
+        ).delete()
+
+        db.commit()
+
+        return {"message": "Account and related user data deleted successfully"}
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete account")
 
 # Lightweight upload test endpoint for CV files.
 @app.post("/upload-cv")
