@@ -1,9 +1,9 @@
-import { Link, NavLink, useNavigate } from "react-router-dom";
-import { clearCurrentUser, getCurrentUser } from "../services/auth";
-import brandLogo from "../assets/images/brand/skillgap-logo.png";
-//Navbar.jsx - Used to display Navigation bar across pages
+import { NavLink, useNavigate } from "react-router-dom";
+import { clearCurrentUser, getCurrentUser, isLoggedIn } from "../services/auth";
+
 function Navbar() {
   const navigate = useNavigate();
+  const loggedIn = isLoggedIn();
   const currentUser = getCurrentUser();
 
   const handleLogout = () => {
@@ -12,44 +12,52 @@ function Navbar() {
   };
 
   return (
-    <nav className="navbar navbar-expand-lg skillgap-nav">
+    <nav className="navbar navbar-expand-lg skillgap-navbar sticky-top shadow-sm">
       <div className="container">
-        <Link className="navbar-brand skillgap-brand" to="/">
-          <img src={brandLogo} alt="Skillgap" className="skillgap-brand-logo" />
-        </Link>
+        <NavLink className="navbar-brand d-flex align-items-center gap-2" to="/">
+          <img src="/skillgap-logo.png" alt="Skillgap" height="34" />
+        </NavLink>
 
         <button
-          className="navbar-toggler skillgap-nav-toggler"
+          className="navbar-toggler"
           type="button"
           data-bs-toggle="collapse"
-          data-bs-target="#mainNav"
-          aria-controls="mainNav"
+          data-bs-target="#skillgapNavbar"
+          aria-controls="skillgapNavbar"
           aria-expanded="false"
           aria-label="Toggle navigation"
         >
-          <span className="navbar-toggler-icon" />
+          <span className="navbar-toggler-icon"></span>
         </button>
 
-        <div className="collapse navbar-collapse" id="mainNav">
-          <ul className="navbar-nav ms-auto align-items-lg-center skillgap-nav-list">
+        <div className="collapse navbar-collapse" id="skillgapNavbar">
+          <ul className="navbar-nav ms-auto align-items-lg-center">
             <li className="nav-item skillgap-nav-item">
               <NavLink className="nav-link" to="/">
                 Home
               </NavLink>
             </li>
 
-            {currentUser && (
+            {loggedIn && (
               <>
                 <li className="nav-item skillgap-nav-item">
                   <NavLink className="nav-link" to="/dashboard">
                     Dashboard
                   </NavLink>
                 </li>
+
                 <li className="nav-item skillgap-nav-item">
                   <NavLink className="nav-link" to="/results">
                     Results
                   </NavLink>
                 </li>
+
+                <li className="nav-item skillgap-nav-item">
+                  <NavLink className="nav-link" to="/history">
+                    History
+                  </NavLink>
+                </li>
+
                 <li className="nav-item skillgap-nav-item">
                   <NavLink className="nav-link" to="/account">
                     Account
@@ -64,7 +72,7 @@ function Navbar() {
               </NavLink>
             </li>
 
-            {!currentUser ? (
+            {!loggedIn ? (
               <>
                 <li className="nav-item ms-lg-3 mt-2 mt-lg-0">
                   <NavLink className="btn btn-outline-primary btn-sm me-2" to="/login">
@@ -80,7 +88,7 @@ function Navbar() {
             ) : (
               <>
                 <li className="nav-item ms-lg-3 nav-user-label me-3 mt-2 mt-lg-0">
-                  Signed in as <strong>{currentUser.username}</strong>
+                  Signed in as <strong>{currentUser?.username || "User"}</strong>
                 </li>
                 <li className="nav-item mt-2 mt-lg-0">
                   <button className="btn btn-outline-primary btn-sm" onClick={handleLogout}>
@@ -95,4 +103,5 @@ function Navbar() {
     </nav>
   );
 }
+
 export default Navbar;
