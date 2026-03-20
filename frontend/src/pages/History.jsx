@@ -42,7 +42,7 @@ function History() {
   };
 
   return (
-    <div className="container py-5">
+    <div className="container py-5 history-page-shell">
       <div className="mb-4">
         <h1 className="mb-2">History</h1>
         <p className="text-muted mb-0">
@@ -50,7 +50,7 @@ function History() {
         </p>
       </div>
 
-      <div className="card shadow-sm border-0 mb-4">
+      <div className="card shadow-sm border-0 mb-4 history-summary-card">
         <div className="card-body p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
           <div>
             <h5 className="mb-1">Analysis History</h5>
@@ -59,7 +59,7 @@ function History() {
             </p>
           </div>
 
-          <span className="badge text-bg-light border px-3 py-2">
+          <span className="badge text-bg-light border px-3 py-2 history-summary-pill">
             {historyCount} snapshot{historyCount === 1 ? "" : "s"}
           </span>
         </div>
@@ -69,7 +69,7 @@ function History() {
       {error && <div className="alert alert-danger">{error}</div>}
 
       {!loading && !error && history.length === 0 && (
-        <div className="alert alert-warning">
+        <div className="alert alert-warning history-empty-card">
           No history is available yet. Run an analysis from the Dashboard first.
         </div>
       )}
