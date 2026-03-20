@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: skillgap_postgres
+    restart: always
+
+    # Expose PostgreSQL to your host machine
+    ports:
+      - "5432:5432"
+
+    # Environment variables define the database credentials
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: skillgap
+
+    # Volume ensures data persists even if the container is removed
+    volumes:
+      - skillgap_data:/var/lib/postgresql/data
+
+volumes:
+  skillgap_data:
