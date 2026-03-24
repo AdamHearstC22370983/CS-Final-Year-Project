@@ -14,7 +14,7 @@
 # - entity normalisation
 # - local course catalog import and search
 # - course recommendations
-
+import re
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -76,15 +76,6 @@ app.add_middleware(
 # create_all() only creates missing tables. It does not alter existing ones.
 Base.metadata.create_all(bind=engine)
 
-# Synonym mapping used to make user-facing missing entities more consistent.
-SYNONYMS = {
-    "rest": "rest api",
-    "restful api": "rest api",
-    "golang": "go",
-    "g-rpc": "grpc",
-    "g rpc": "grpc",
-    "k8s": "kubernetes",
-}
 # OAuth2 bearer token scheme for JWT auth.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 security = HTTPBearer()
@@ -148,6 +139,75 @@ def _get_current_user(
 def _norm(value: Any) -> str:
     return str(value or "").strip().lower()
 
+# Synonym mapping used to make user-facing missing entities more consistent.
+SYNONYMS = {
+    "rest": "rest api",
+    "restful api": "rest api",
+    "golang": "go",
+    "g-rpc": "grpc",
+    "g rpc": "grpc",
+    "k8s": "kubernetes",
+    "python programming": "python",
+    "java programming": "java",
+    "rust programming language": "rust",
+    "elastic search": "elasticsearch",
+    "cyber security": "cybersecurity",
+    "continuous integration": "ci/cd",
+    "continuous delivery": "ci/cd",
+    "continuous deployment": "ci/cd",
+}
+
+# Filter out vague, non-teachable, or experience-only entities.
+BLOCKED_EXACT_ENTITIES = {
+    "initiative",
+    "innovation",
+    "documentation",
+    "degree",
+    "experience",
+    "experience with",
+    "decision making",
+    "conflict management",
+    "change management",
+    "observability",
+    "teamwork",
+    "communication",
+    "problem solving",
+    "critical thinking",
+    "analytical and critical thinking",
+    "leadership",
+    "collaboration",
+    "management",
+    "software development",
+    "development",
+    "coding",
+    "programming",
+    "build software",
+}
+
+BLOCKED_CONTAINS_PATTERNS = [
+    "years",
+    "year experience",
+    "+ years",
+    "experience with",
+]
+
+def remove_years_experience(value: str) -> bool:
+    if not value:
+        return False
+
+    # Remove classic experience related phrases such as:
+    if re.search(r"\b\d+\+?\s*years?\b", value):
+        return True
+
+    if re.search(r"\b\d+\+?\s*years?\s+experience\b", value):
+        return True
+
+    if "experience with" in value:
+        return True
+
+    return False
+
+
 # Canonicalise missing entities before returning them to the frontend.
 # Duplicate values are removed while preserving order.
 # Generic low-value entities are filtered out.
@@ -155,20 +215,6 @@ def _canonicalize_missing_entities(values: List[str]) -> List[str]:
     output: List[str] = []
     seen = set()
 
-    blocked_entities = {
-        "initiative",
-        "build software",
-        "software development",
-        "development",
-        "coding",
-        "programming",
-        "teamwork",
-        "communication",
-        "collaboration",
-        "problem solving",
-    }
-    # for loop to iterate through values, clena and canonicalise them
-    # then add them to the output list bar they are not blocked entities or duplicates
     for value in values or []:
         cleaned = _norm(value)
         if not cleaned:
@@ -176,7 +222,13 @@ def _canonicalize_missing_entities(values: List[str]) -> List[str]:
 
         cleaned = SYNONYMS.get(cleaned, cleaned)
 
-        if cleaned in blocked_entities:
+        if cleaned in BLOCKED_EXACT_ENTITIES:
+            continue
+
+        if remove_years_experience(cleaned):
+            continue
+
+        if any(pattern in cleaned for pattern in BLOCKED_CONTAINS_PATTERNS):
             continue
 
         if cleaned not in seen:
