@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import RecommendationCard from "../components/RecommendationCard";
+import { toTitleCaseSkill } from "../utils/formatters";
 
 function Results() {
   const [searchParams] = useSearchParams();
@@ -146,7 +147,7 @@ function Results() {
                     <div className="results-skill-list">
                       {missingEntities.map((skill) => (
                         <div key={skill} className="results-skill-row">
-                          <div className="results-skill-name">{skill}</div>
+                          <div className="results-skill-name">{toTitleCaseSkill(skill)}</div>
 
                           <div className="results-skill-actions">
                             <button
@@ -186,7 +187,7 @@ function Results() {
                     <div className="results-skill-list">
                       {confirmedSkills.map((skill) => (
                         <div key={skill} className="results-skill-row">
-                          <div className="results-skill-name">{skill}</div>
+                          <div className="results-skill-name">{toTitleCaseSkill(skill)}</div>
 
                           <div className="results-skill-actions">
                             <button
