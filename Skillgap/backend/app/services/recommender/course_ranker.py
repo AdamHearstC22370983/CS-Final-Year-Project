@@ -1,9 +1,6 @@
 # app/services/recommender/course_ranker.py
-# Uses internal similarity scoring for ranking
-# Returns user-friendly recommendation output
-# Supports guided-question inputs:
-# - experience_level
-# - has_taken_course
+# Uses internal similarity scoring for ranking while returning user-friendly recommendation output
+# Supports guided-question inputs for experience level
 # Raw scores are not exposed to the API response
 
 from __future__ import annotations
@@ -12,8 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.services.recommender.scoring import jaccard, tfidf_cosine_scores, weighted_final
 
-# Synonym map to improve matching between extracted missing entities
-# and stored course entities/skills.
+# Synonym map kept only for course-matching purposes.
+# main.py already handles broader user-facing missing-skill cleanup and pruning.
+# This mapping remains necessary because course skills in the DB may still use
+# older or alternate forms that should match the user's canonical missing skills.
 SYNONYMS = {
     "rest": "rest api",
     "restful api": "rest api",
@@ -21,6 +20,14 @@ SYNONYMS = {
     "g-rpc": "grpc",
     "g rpc": "grpc",
     "k8s": "kubernetes",
+    "python programming": "python",
+    "java programming": "java",
+    "rust programming language": "rust",
+    "elastic search": "elasticsearch",
+    "cyber security": "cybersecurity",
+    "continuous integration": "ci/cd",
+    "continuous delivery": "ci/cd",
+    "continuous deployment": "ci/cd",
 }
 
 # Loose level mapping because provider level labels are not always consistent.
@@ -35,7 +42,7 @@ def _norm(value: Any) -> str:
     return str(value or "").strip().lower()
 
 # Apply the synonym map to a set of already-normalised values.
-# This helps ensure that equivalent terms are treated as the same skill/entity.
+# This helps ensure that equivalent course-skill terms are treated as the same skill/entity.
 def _apply_synonyms(values: Set[str]) -> Set[str]:
     output: Set[str] = set()
 
@@ -45,7 +52,7 @@ def _apply_synonyms(values: Set[str]) -> Set[str]:
     return output
 
 # Convert a Python set into a PostgreSQL array literal string.
-# This is used with the Postgres jsonb ?| operator when checking overlap
+# Used with the Postgres jsonb ?| operator when checking overlap
 # against the skills_norm column.
 def _to_pg_array_literal(values: Set[str]) -> str:
     return "{" + ",".join(sorted(values)) + "}"
@@ -87,8 +94,7 @@ def _clean_organization(value: Any) -> Optional[str]:
 
     return text_value or None
 
-# Normalise provider values so provider diversity can work consistently.
-# Avoids treating variations such as "edx_courses" and "edx" as separate providers.
+# Normalise provider values so provider diversity can work consistently rather than treating similarly named providers as serparate.
 def _normalize_provider(provider: Any) -> str:
     value = _norm(provider)
 
@@ -96,8 +102,40 @@ def _normalize_provider(provider: Any) -> str:
         "coursera": "coursera",
         "edx": "edx",
         "edx_courses": "edx",
+        "edx_programs": "edx",
     }
+
     return aliases.get(value, value)
+
+# Clean level labels before sending them to the frontend.
+def _normalize_level_label(level: Any) -> Optional[str]:
+    if level is None:
+        return None
+
+    text_value = str(level).strip()
+
+    if not text_value:
+        return None
+
+    lowered = _norm(text_value)
+
+    if (
+        "introductory" in lowered
+        and "intermediate" in lowered
+        and "advanced" in lowered
+    ):
+        return "Mixed"
+
+    if lowered in {"introductory", "beginner", "foundation", "foundational", "foundations", "basic"}:
+        return "Beginner"
+
+    if lowered == "intermediate":
+        return "Intermediate"
+
+    if lowered == "advanced":
+        return "Advanced"
+
+    return text_value
 
 # Check whether a course genuinely looks like a Golang programming course.
 # Prevents false positives caused by the word "go" being too short and too common in general language.
@@ -111,12 +149,13 @@ def _is_strong_go_course(course_name: str, description: str, skills_norm: List[s
         "go language",
         "go developer",
     ]
+
     if any(term in text_blob for term in strong_terms):
         return True
 
     if "golang" in skills_norm:
         return True
-    
+
     return False
 
 # Apply extra safeguards for ambiguous entities.
@@ -134,7 +173,10 @@ def _filter_ambiguous_matches(
     return filtered
 
 # Assign a user-friendly label to each recommendation.
-# The label is based mainly on; how much of the user's missing gap the course covers, where it appears in the ranked list, and a small quality bonus from rating/reviews
+# The label is based mainly on: 
+# how much of the user's missing gap the course covers, 
+# where it appears in the ranked list, 
+# a small quality bonus from rating/reviews
 def _recommendation_label(
     matched_count: int,
     missing_count: int,
@@ -166,8 +208,7 @@ def _recommendation_label(
 
     return "Exploratory"
 
-# Check whether an optional field is present often enough across the top results
-# to justify exposing it in the API response.
+# Check whether an optional field is present often enough across the top results to justify exposing it in the API response.
 # This avoids returning sparse or inconsistent metadata to the frontend.
 def _consistent_fields(rows: List[Dict[str, Any]], field: str, threshold: float = 0.80) -> bool:
     if not rows:
@@ -183,8 +224,6 @@ def _consistent_fields(rows: List[Dict[str, Any]], field: str, threshold: float 
     return (present / len(rows)) >= threshold
 
 # Read the live courses table schema and return the set of available column names.
-# This makes the ranker more robust if the database is slightly ahead or behind
-# the current Python model definition.
 def _get_available_course_columns(db: Session) -> Set[str]:
     sql = text(
         """
@@ -193,13 +232,11 @@ def _get_available_course_columns(db: Session) -> Set[str]:
         WHERE table_name = 'courses'
         """
     )
-
     rows = db.execute(sql).mappings().all()
     return {str(row["column_name"]).strip().lower() for row in rows}
 
-# Build the SELECT field list dynamically based on which columns actually exist
-# in the live courses table.
-# This prevents crashes caused by querying columns that are not present.
+# Build the SELECT field list dynamically 
+# Helps to prevent crashes caused by querying columns that are not present.
 def _build_select_fields(available_columns: Set[str]) -> List[str]:
     preferred_fields = [
         "id",
@@ -218,12 +255,9 @@ def _build_select_fields(available_columns: Set[str]) -> List[str]:
         "description",
         "skills_norm",
     ]
-
     return [field for field in preferred_fields if field in available_columns]
 
-# Return a broad, relevance-sorted candidate pool from which the final list
-# will be built. The final list can then apply a light diversity pass without
-# disturbing the main relevance scoring itself.
+# Return a broad, relevance-sorted candidate pool from which the final list will be built. 
 def _build_candidate_pool(
     internal_ranked: List[Dict[str, Any]],
     top_n: int,
@@ -237,10 +271,8 @@ def _build_candidate_pool(
     return internal_ranked[:target_pool_size]
 
 # Apply a light provider-diversity pass after normal ranking.
-# This keeps the highest-quality recommendation first, but tries to include
-# 1-2 alternatives from other providers where they are still reasonably relevant.
-# The logic is intentionally soft as it doesn't force weak providers into the list and only considers already high-ranking candidates from the candidate pool
-# it preserves relevance as the primary goal
+# This allows strong alternatives to pop up from different providers
+# with jeopardising the ranking relevance
 def _apply_provider_diversity(
     candidate_pool: List[Dict[str, Any]],
     top_n: int,
@@ -275,9 +307,10 @@ def _apply_provider_diversity(
             if row_score >= best_score * min_relative_score:
                 alternative_provider_rows.append(row)
 
-    # Add a small number of strong alternatives from other providers first.
+    # Adding a small number of strong alternatives from other providers first.
     distinct_provider_set = {first.get("_provider_norm")}
     added_non_dominant = 0
+
     # for loop used to allow break conditions based on both top_n courses and max non-dominant slots
     for row in alternative_provider_rows:
         if len(selected) >= top_n:
@@ -294,7 +327,7 @@ def _apply_provider_diversity(
             distinct_provider_set.add(provider_norm)
             added_non_dominant += 1
 
-    # If we still have fewer than the desired number of distinct providers, try one more pass through the broader candidate pool.
+    # If I still have fewer than the desired number of distinct providers, try one more pass through the broader candidate pool.
     if len(distinct_provider_set) < preferred_min_distinct_providers:
         for row in candidate_pool[1:]:
             if len(selected) >= top_n:
@@ -313,6 +346,7 @@ def _apply_provider_diversity(
 
                     if len(distinct_provider_set) >= preferred_min_distinct_providers:
                         break
+
     # Fill the remaining slots by original relevance order.
     for row in candidate_pool:
         if len(selected) >= top_n:
@@ -372,14 +406,15 @@ def rank_courses_for_missing(
     # Base candidate filter:
     # keep only courses whose skills_norm overlaps any missing entity.
     base_match_sql = "skills_norm IS NOT NULL AND skills_norm ?| :missing"
+
     # Extra fallback for gRPC if it appears in text but not in skills_norm.
     grpc_fallback_sql = ""
     if "grpc" in missing:
         grpc_fallback_sql = (
             " OR lower(course_name) LIKE '%grpc%'"
-            " OR lower(description) LIKE '%grpc%'"
             " OR lower(description) LIKE '%remote procedure%'"
         )
+
     # Optional level filter if one was inferred or explicitly provided.
     level_clause = ""
     if allowed_levels and "level" in available_columns:
@@ -399,6 +434,7 @@ def rank_courses_for_missing(
         """
     )
     rows = db.execute(sql, params).mappings().all()
+
     if not rows:
         return []
 
@@ -439,6 +475,7 @@ def rank_courses_for_missing(
         matched_count = len(matched)
         if matched_count == 0:
             continue
+
         # Calculate the similarity scores used for internal ranking.
         jaccard_score = jaccard(missing, skills_norm)
         final_score = weighted_final(
@@ -449,15 +486,17 @@ def rank_courses_for_missing(
         )
         coverage = matched_count / missing_count if missing_count > 0 else 0.0
         provider_norm = _normalize_provider(row.get("provider"))
+        normalized_level = _normalize_level_label(row.get("level"))
+
         internal_ranked.append(
             {
                 "course_id": row.get("id"),
                 "url": row.get("url"),
                 "course_name": row.get("course_name"),
-                "provider": row.get("provider"),
+                "provider": provider_norm if provider_norm else row.get("provider"),
                 "organization": _clean_organization(row.get("organization") or row.get("organisation")),
                 "type": row.get("type"),
-                "level": row.get("level"),
+                "level": normalized_level,
                 "subject": row.get("subject"),
                 "duration": row.get("duration"),
                 "rating": row.get("rating"),
@@ -473,11 +512,13 @@ def rank_courses_for_missing(
                 "_provider_norm": provider_norm,
             }
         )
+
     # Rank internally by the weighted score, then by coverage, then by matched count.
     internal_ranked.sort(
         key=lambda item: (item["_final"], item["_coverage"], item["matched_count"]),
         reverse=True,
     )
+
     # Build a broader pool first, then apply a light provider-diversity pass.
     candidate_pool = _build_candidate_pool(
         internal_ranked=internal_ranked,
@@ -492,6 +533,7 @@ def rank_courses_for_missing(
         preferred_min_distinct_providers=2,
         preferred_max_non_dominant_slots=2,
     )
+
     # Assign the final user-facing recommendation labels after ranking, so rank position can be taken into account.
     for index, row in enumerate(top):
         row["recommendation_label"] = _recommendation_label(
@@ -501,6 +543,7 @@ def rank_courses_for_missing(
             rating=row.get("rating"),
             nu_reviews=row.get("nu_reviews"),
         )
+
     # Only expose optional fields if they are consistently available.
     include_org = _consistent_fields(top, "organization", threshold=0.80)
     include_level = _consistent_fields(top, "level", threshold=0.80)
@@ -512,6 +555,7 @@ def rank_courses_for_missing(
     include_enrollments = _consistent_fields(top, "enrollments", threshold=0.80)
 
     output: List[Dict[str, Any]] = []
+
     # Build the final user-facing response shape.
     for row in top:
         item: Dict[str, Any] = {
@@ -541,5 +585,7 @@ def rank_courses_for_missing(
             item["nu_reviews"] = row.get("nu_reviews")
         if include_enrollments:
             item["enrollments"] = row.get("enrollments")
+
         output.append(item)
+
     return output
