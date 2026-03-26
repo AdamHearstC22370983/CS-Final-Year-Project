@@ -10,6 +10,7 @@ export function normaliseProviderName(provider){
     const aliases = {
         edx: "edx",
         edx_courses: "edx",
+        edx_programs: "edx",
         coursera: "coursera",
     };
 
