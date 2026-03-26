@@ -1,10 +1,11 @@
 //routes.jsx - updated to provided protected routing
-import { Routes, Route } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import Home from "./pages/Home";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Results from "./pages/Results";
+import Review from "./pages/Review";
+import Recommendations from "./pages/Recommendations";
 import Account from "./pages/Account";
 import History from "./pages/History";
 import Help from "./pages/Help";
@@ -16,6 +17,7 @@ function AppRoutes() {
       <Route path="/" element={<Home />} />
       <Route path="/register" element={<Register />} />
       <Route path="/login" element={<Login />} />
+
       <Route
         path="/dashboard"
         element={
@@ -24,14 +26,30 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
       <Route
-        path="/results"
+        path="/review"
         element={
           <ProtectedRoute>
-            <Results />
+            <Review />
           </ProtectedRoute>
         }
       />
+
+      <Route
+        path="/recommendations"
+        element={
+          <ProtectedRoute>
+            <Recommendations />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/results"
+        element={<Navigate to="/review" replace />}
+      />
+
       <Route
         path="/account"
         element={
@@ -40,6 +58,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/history"
         element={
@@ -48,8 +67,10 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
       <Route path="/help" element={<Help />} />
     </Routes>
   );
 }
+
 export default AppRoutes;
