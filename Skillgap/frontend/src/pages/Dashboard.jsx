@@ -3,11 +3,10 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import UploadCard from "../components/UploadCard";
 import GuidedQuestions from "../components/GuidedQuestions";
-import { getCurrentUser, isLoggedIn } from "../services/auth";
+import { isLoggedIn } from "../services/auth";
 
 function Dashboard() {
   const navigate = useNavigate();
-  const currentUser = getCurrentUser();
 
   const [cvFile, setCvFile] = useState(null);
   const [jdFile, setJdFile] = useState(null);
@@ -71,10 +70,10 @@ function Dashboard() {
       setStatus("Comparing skills and building your latest gap snapshot...");
       await computeGap();
 
-      setStatus("Analysis complete. Redirecting to results...");
+      setStatus("Analysis complete. Redirecting to review...");
 
       navigate(
-        `/results?experience_level=${encodeURIComponent(
+        `/review?experience_level=${encodeURIComponent(
           experienceLevel
         )}&has_taken_course=${encodeURIComponent(hasTakenCourse)}`
       );
@@ -91,28 +90,8 @@ function Dashboard() {
       <div className="mb-4">
         <h1 className="mb-2">Dashboard</h1>
         <p className="text-muted mb-0">
-          Work through the four stages below to generate tailored recommendations from your CV and
-          target job description.
+          Upload your CV and target job description, then run a secure skill-gap analysis.
         </p>
-      </div>
-
-      <div className="card shadow-sm border-0 mb-4 dashboard-summary-card">
-        <div className="card-body d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-          <div>
-            <div className="fw-semibold mb-1">Signed in user</div>
-            <div className="text-muted">
-              {currentUser?.username || "User"}
-              {currentUser?.email ? ` (${currentUser.email})` : ""}
-            </div>
-          </div>
-
-          <div className="dashboard-stage-badges d-flex flex-wrap gap-2">
-            <span className="badge text-bg-light border px-3 py-2">1. Upload</span>
-            <span className="badge text-bg-light border px-3 py-2">2. Answer</span>
-            <span className="badge text-bg-light border px-3 py-2">3. Analyse</span>
-            <span className="badge text-bg-light border px-3 py-2">4. Review</span>
-          </div>
-        </div>
       </div>
 
       <div className="row g-4 mb-4">
@@ -122,7 +101,7 @@ function Dashboard() {
             <div>
               <h4 className="mb-1">Upload your documents</h4>
               <p className="text-muted mb-0">
-                Add both a CV and Job Description to begin your skill gap comparison.
+                Add both a CV and Job Description to begin your skill-gap comparison.
               </p>
             </div>
           </div>
@@ -147,14 +126,14 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="row g-4 mb-4">
+      <div className="row g-4 align-items-stretch">
         <div className="col-12">
           <div className="dashboard-section-header">
             <span className="dashboard-section-number">2</span>
             <div>
-              <h4 className="mb-1">Answer a few guided questions</h4>
+              <h4 className="mb-1">Refine and run your analysis</h4>
               <p className="text-muted mb-0">
-                These are optional, but they do help the system shape your recommendation experience.
+                Guided questions are optional, but they help shape the recommendation experience.
               </p>
             </div>
           </div>
@@ -170,56 +149,32 @@ function Dashboard() {
         </div>
 
         <div className="col-lg-4">
-          <div className="card shadow-sm border-0 h-100 dashboard-check-card">
-            <div className="card-body p-4">
-              <h5 className="card-title">Readiness Check</h5>
-              <p className="text-muted">
-                Make sure the core inputs are in place before you start.
-              </p>
+          <div className="card shadow-sm border-0 h-100 dashboard-run-card">
+            <div className="card-body p-4 d-flex flex-column justify-content-between">
+              <div>
+                <h5 className="card-title mb-2">Run Analysis</h5>
+                <p className="text-muted mb-0">
+                  Skillgap will extract skills, compare both documents, and prepare a review page
+                  where you can confirm skills before viewing recommendations.
+                </p>
+              </div>
 
-              <div className="dashboard-checklist small">
-                <div className={`mb-2 ${cvFile ? "text-success" : "text-muted"}`}>
-                  {cvFile ? "✓" : "•"} CV selected
-                </div>
-                <div className={`mb-2 ${jdFile ? "text-success" : "text-muted"}`}>
-                  {jdFile ? "✓" : "•"} Job description selected
-                </div>
-                <div className={`mb-2 ${experienceLevel ? "text-success" : "text-muted"}`}>
-                  {experienceLevel ? "✓" : "•"} Experience level set
-                </div>
-                <div className={hasTakenCourse ? "text-success" : "text-muted"}>
-                  {hasTakenCourse ? "✓" : "•"} Course background answered
-                </div>
+              <div className="mt-4">
+                <button
+                  className="btn btn-primary btn-lg w-100 dashboard-run-button"
+                  onClick={handleRunAnalysis}
+                  disabled={isRunning}
+                >
+                  {isRunning ? "Running Analysis..." : "Run Analysis"}
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="row g-4 mb-4">
-        <div className="col-12">
-          <div className="dashboard-section-header">
-            <span className="dashboard-section-number">3</span>
-            <div>
-              <h4 className="mb-1">Run the analysis</h4>
-              <p className="text-muted mb-0">
-                Skillgap will extract skills, compare your documents, and prepare recommendations.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {status && <div className="alert alert-info">{status}</div>}
-      {error && <div className="alert alert-danger">{error}</div>}
-
-      <button
-        className="btn btn-primary btn-lg dashboard-run-button"
-        onClick={handleRunAnalysis}
-        disabled={isRunning}
-      >
-        {isRunning ? "Running Analysis..." : "Run Analysis"}
-      </button>
+      {status && <div className="alert alert-info mt-4">{status}</div>}
+      {error && <div className="alert alert-danger mt-4">{error}</div>}
     </div>
   );
 }
