@@ -19,11 +19,7 @@ function Navbar() {
     <nav className="navbar navbar-expand-lg skillgap-navbar sticky-top shadow-sm">
       <div className="container">
         <NavLink className="navbar-brand skillgap-brand d-flex align-items-center" to="/">
-          <img
-            src={skillgapLogo}
-            alt="Skillgap logo"
-            className="skillgap-brand-logo"
-          />
+          <img src={skillgapLogo} alt="Skillgap logo" className="skillgap-brand-logo" />
         </NavLink>
 
         <button
@@ -55,8 +51,14 @@ function Navbar() {
                 </li>
 
                 <li className="nav-item skillgap-nav-item">
-                  <NavLink className={navLinkClass} to="/results">
-                    Results
+                  <NavLink className={navLinkClass} to="/review">
+                    Review
+                  </NavLink>
+                </li>
+
+                <li className="nav-item skillgap-nav-item">
+                  <NavLink className={navLinkClass} to="/recommendations">
+                    Recommendations
                   </NavLink>
                 </li>
 

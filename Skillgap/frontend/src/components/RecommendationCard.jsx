@@ -1,7 +1,8 @@
-//RecommendationCard.jsx
+// RecommendationCard.jsx
 import { toTitleCaseSkill, formatDurationHours } from "../utils/formatters";
 import { getProviderDisplayName, getProviderLogo } from "../utils/providerLogos";
-//function to display the reccomendation card to the user
+
+// Function to display a recommendation card to the user.
 function RecommendationCard({ recommendation }) {
   const {
     course_name,
@@ -13,6 +14,11 @@ function RecommendationCard({ recommendation }) {
     covers,
     matched_skills,
     url,
+    rating,
+    nu_reviews,
+    enrollments,
+    subject,
+    type,
   } = recommendation;
 
   const providerLogo = getProviderLogo(provider);
@@ -20,10 +26,10 @@ function RecommendationCard({ recommendation }) {
   const formattedDuration = formatDurationHours(duration);
 
   return (
-    <div className="card shadow-sm border-0 mb-3">
-      <div className="card-body">
-        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
-          <div className="d-flex align-items-start gap-3">
+    <div className="card shadow-sm border-0 mb-3 recommendation-card-compact">
+      <div className="card-body p-4">
+        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3">
+          <div className="d-flex align-items-start gap-3 flex-grow-1">
             {providerLogo && (
               <div className="provider-logo-frame">
                 <img
@@ -34,52 +40,68 @@ function RecommendationCard({ recommendation }) {
               </div>
             )}
 
-            <div>
-              <h5 className="card-title mb-1">{course_name}</h5>
-              <p className="text-muted mb-2">
-                {providerDisplayName}
+            <div className="recommendation-main-content">
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <h4 className="card-title mb-0 recommendation-course-title">{course_name}</h4>
+
+                <span className="badge rounded-pill label-pill recommendation-label-pill">
+                  {recommendation_label || "Exploratory"}
+                </span>
+              </div>
+
+              <div className="recommendation-provider-line text-muted mb-2">
+                <span className="recommendation-provider-name">{providerDisplayName}</span>
                 {organization ? ` • ${organization}` : ""}
-              </p>
+                {type ? ` • ${toTitleCaseSkill(type)}` : ""}
+                {subject ? ` • ${toTitleCaseSkill(subject)}` : ""}
+              </div>
+
+              <div className="recommendation-meta-row small text-muted mb-3">
+                <span>{level ? `Level: ${toTitleCaseSkill(level)}` : "Level: N/A"}</span>
+                {formattedDuration ? <span>Duration: {formattedDuration}</span> : null}
+                {covers ? <span>Covers: {covers}</span> : null}
+                {typeof rating === "number" ? <span>Rating: {rating}</span> : null}
+                {typeof nu_reviews === "number" ? <span>Reviews: {nu_reviews}</span> : null}
+                {typeof enrollments === "number" ? <span>Enrolments: {enrollments}</span> : null}
+              </div>
+
+              {!!matched_skills?.length && (
+                <div className="mb-0">
+                  <span className="fw-semibold d-block mb-2 recommendation-skill-heading">
+                    Matched Skills
+                  </span>
+
+                  <div className="d-flex flex-wrap gap-2">
+                    {matched_skills.map((skill, index) => (
+                      <span
+                        key={`${skill}-${index}`}
+                        className="badge rounded-pill matched-skill-pill"
+                      >
+                        {toTitleCaseSkill(skill)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          <span className="badge rounded-pill label-pill">
-            {recommendation_label || "Exploratory"}
-          </span>
-        </div>
-
-        <div className="small text-muted mb-2">
-          {level ? `Level: ${toTitleCaseSkill(level)}` : "Level: N/A"}
-          {formattedDuration ? ` • Duration: ${formattedDuration}` : ""}
-          {covers ? ` • Covers: ${covers}` : ""}
-        </div>
-
-        <div className="mb-3">
-          <span className="fw-semibold d-block mb-2">Matched Skills</span>
-          <div className="d-flex flex-wrap gap-2">
-            {(matched_skills || []).map((skill, index) => (
-              <span
-                key={`${skill}-${index}`}
-                className="badge rounded-pill matched-skill-pill"
+          <div className="recommendation-cta-wrap">
+            {url && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-primary recommendation-cta"
               >
-                {toTitleCaseSkill(skill)}
-              </span>
-            ))}
+                View Course
+              </a>
+            )}
           </div>
         </div>
-
-        {url && (
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn-sm btn-primary"
-          >
-            View Course
-          </a>
-        )}
       </div>
     </div>
   );
 }
+
 export default RecommendationCard;
