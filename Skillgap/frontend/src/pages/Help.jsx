@@ -4,7 +4,7 @@ function Help() {
       <div className="mb-4">
         <h1 className="mb-2">Help & Privacy</h1>
         <p className="text-muted mb-0">
-          Learn how Skillgap works, how recommendations are created, and how account and analysis
+          Learn how Skillgap works, including how recommendations are created, and how account and analysis
           data are handled.
         </p>
       </div>
@@ -15,26 +15,26 @@ function Help() {
             <div className="card-body p-4">
               <h3 className="mb-3">How Skillgap Works</h3>
               <p>
-                Skillgap compares a user’s CV against a target job description to identify missing
-                skills. It then recommends courses that may help bridge those gaps.
+                Skillgap compares a user’s CV against a job description to identify missing
+                skills. It then recommends courses that may help bridge those "skill-gaps".
               </p>
 
               <div className="help-step-card mb-3">
-                <h5 className="mb-2">1. Upload documents</h5>
+                <h5 className="mb-3">1. Upload documents</h5>
                 <p className="mb-0 text-muted">
                   A CV and a job description are uploaded through the dashboard.
                 </p>
               </div>
 
               <div className="help-step-card mb-3">
-                <h5 className="mb-2">2. Extract skills</h5>
+                <h5 className="mb-3">2. Extract skills</h5>
                 <p className="mb-0 text-muted">
                   The system extracts skills and related terms from both documents.
                 </p>
               </div>
 
               <div className="help-step-card mb-3">
-                <h5 className="mb-2">3. Identify missing skills</h5>
+                <h5 className="mb-3">3. Identify missing skills</h5>
                 <p className="mb-0 text-muted">
                   Skills present in the job description but not found in the CV are treated as
                   missing.
@@ -42,7 +42,7 @@ function Help() {
               </div>
 
               <div className="help-step-card">
-                <h5 className="mb-2">4. Recommend courses</h5>
+                <h5 className="mb-3">4. Recommend courses</h5>
                 <p className="mb-0 text-muted">
                   Courses are ranked using skill overlap and supporting text similarity, with some
                   provider diversity added where useful.
@@ -82,7 +82,7 @@ function Help() {
               <h3 className="mb-3">What “Matched Skills” Means</h3>
               <p className="mb-0">
                 Matched Skills are the skills from your missing skill list that also appear in the
-                course profile. They help explain why a course was recommended.
+                course profile. They help explain why the course was recommended.
               </p>
             </div>
           </div>
@@ -91,7 +91,7 @@ function Help() {
             <div className="card-body p-4">
               <h3 className="mb-3">Security and Privacy</h3>
               <p>
-                Skillgap is designed around minimal data collection and practical user control. The
+                Skillgap is designed around minimal data collection and full user control. The
                 application stores only the information needed for account access and recommendation
                 generation.
               </p>
@@ -129,7 +129,8 @@ function Help() {
               <h3 className="mb-3">Security Principles</h3>
               <ul className="text-muted small mb-0">
                 <li>Minimal user data collection</li>
-                <li>Password hashing</li>
+                <li>Protected login via OAuth2 protection</li>
+                <li>Password protection via password hashing</li>
                 <li>Protected frontend routes</li>
                 <li>Restricted development CORS configuration</li>
                 <li>User-controlled account actions</li>
@@ -141,21 +142,12 @@ function Help() {
             <div className="card-body p-4">
               <h3 className="mb-3">Where to Manage Things</h3>
               <ul className="text-muted small mb-0">
-                <li>Use Dashboard to upload files and run analysis.</li>
-                <li>Use Results to review missing skills and recommendations.</li>
-                <li>Use History to review earlier gap snapshots.</li>
-                <li>Use Account for actions like changing password or deleting your account.</li>
+                <li>Use the Dashboard page to upload CV and Job Description files and run the Skill gap analysis.</li>
+                <li>Use the Review page to look at missing skills and confirm whether you have them or not.</li>
+                <li>Use the Recommendation page to view your list of curated learning courses.</li>
+                <li>Use the History page to review any previous analysed skill gaps.</li>
+                <li>Use the Account page for actions like changing password or deleting your account.</li>
               </ul>
-            </div>
-          </div>
-
-          <div className="card shadow-sm border-0">
-            <div className="card-body p-4">
-              <h3 className="mb-3">Need More Help?</h3>
-              <p className="text-muted mb-0">
-                Future versions of this page can include FAQs, troubleshooting tips, and guidance
-                on how to interpret recommendation results for different job types.
-              </p>
             </div>
           </div>
         </div>

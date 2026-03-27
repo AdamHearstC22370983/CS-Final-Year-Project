@@ -262,8 +262,7 @@ function Account() {
               </div>
 
               <p className="text-muted small mt-3 mb-0">
-                Privacy, security, and data-handling explanations are available on the Help &amp;
-                Privacy page.
+                Privacy, security, and data-handling explanations are available on the Help page.
               </p>
             </div>
           </div>
