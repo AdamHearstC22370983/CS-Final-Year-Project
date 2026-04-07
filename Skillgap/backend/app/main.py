@@ -17,7 +17,7 @@
 import re
 from pathlib import Path
 from typing import Any, List, Optional
-
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +29,7 @@ from app.models.CV_entity import CVEntity
 from app.models.JD_entity import JDEntity
 from app.models.confirmed_skill import ConfirmedSkill
 from app.models.course import Course
-from app.models.db import Base, engine, get_db
+from app.models.db import Base, engine, get_db, SessionLocal
 from app.models.gap_snapshot import GapSnapshot
 from app.models.normalised_entity import NormalisedEntity
 from app.models.user import User
@@ -53,12 +53,31 @@ from app.utils.security import (
     verify_password,
 )
 
+# Lifespan function to run startup code before the app starts accepting requests.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db = SessionLocal()
+    try:
+        course_count = db.query(Course).count()
+        if course_count == 0:
+            ingest_catalog(
+                db=db,
+                base_dir=CATALOG_DIR,
+                filename=CATALOG_FILE,
+                truncate_first=False,
+            )
+            print("Local course catalogue imported successfully.")
+        else:
+            print("Course catalogue already present. Skipping import.")
+    except Exception as exc:
+        print(f"Course catalogue startup import failed: {exc}")
+    finally:
+        db.close()
+
+    yield
+
 # Create the FastAPI application instance.
-app = FastAPI(
-    title="Skillgap Backend API",
-    description="API for CV/JD parsing, entity extraction, gap analysis, ESCO-style normalization, and DB-backed course recommendations.",
-    version="0.1.0",
-)
+app = FastAPI(lifespan=lifespan)
 
 # Allow the React frontend to call the FastAPI backend during development.
 app.add_middleware(
@@ -79,6 +98,30 @@ Base.metadata.create_all(bind=engine)
 # OAuth2 bearer token scheme for JWT auth.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 security = HTTPBearer()
+
+# Directory where the local course catalog JSON file is stored.
+CATALOG_DIR = Path(__file__).resolve().parent / "data"
+CATALOG_FILE = "course_catalogue.json"
+
+@app.on_event("startup")
+def ensure_local_catalog_loaded():
+    db = SessionLocal()
+    try:
+        course_count = db.query(Course).count()
+        if course_count == 0:
+            ingest_catalog(
+                db=db,
+                base_dir=CATALOG_DIR,
+                filename=CATALOG_FILE,
+                truncate_first=False,
+            )
+            print("Local course catalogue imported successfully.")
+        else:
+            print("Course catalogue already present. Skipping import.")
+    except Exception as exc:
+        print(f"Course catalogue startup import failed: {exc}")
+    finally:
+        db.close()
 
 # Request body for confirmed-skill actions.
 class ConfirmedSkillRequest(BaseModel):
@@ -850,18 +893,15 @@ async def normalise_entities(
 # Import the local course catalog JSON file into the database.
 @app.post("/catalog/import-local")
 def import_catalog_local(db=Depends(get_db)):
-    base_dir = Path(".")
-
     stats = ingest_catalog(
         db=db,
-        base_dir=base_dir,
-        filename="kaggle_courses.json",
+        base_dir=CATALOG_DIR,
+        filename=CATALOG_FILE,
         truncate_first=True,
     )
-
     return {
         "message": "Catalog import complete",
-        "stats": {"kaggle_courses.json": stats},
+        "stats": {CATALOG_FILE: stats},
     }
 
 # Search the local course catalog by query string.
