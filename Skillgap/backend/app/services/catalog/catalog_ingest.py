@@ -337,13 +337,10 @@ def upsert_courses(db: Session, rows: List[Dict[str, Any]], batch_size: int = 10
 def ingest_catalog(
     db: Session,
     base_dir: Path,
-    filename: str = "kaggle_courses.json",
+    filename: str = "course_catalogue.json",
     truncate_first: bool = True,
 ) -> Dict[str, int]:
-    #Replaces the entire Course catalog from your curated export file.
-    # truncate_first=True: wipes Course table then imports
-    # truncate_first=False: upserts into existing rows
-    
+    # Ingest courses from a JSON export file into the database.
     path = base_dir / filename
     rows = _load_courses_export(path)
 
