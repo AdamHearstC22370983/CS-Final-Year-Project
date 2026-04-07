@@ -29,8 +29,8 @@ Before running Skillgap, the following should be installed:
 ## 2. Downloading the Project
 Clone the repository from GitHub:
 ```bash
-git clone <REPOSITORY_URL>
-cd <REPOSITORY_FOLDER>
+git clone <https://github.com/AdamHearstC22370983/CS-Final-Year-Project>
+cd <Skillgap>
 ```
 
 If the repository is downloaded as a ZIP instead:
