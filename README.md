@@ -1,69 +1,70 @@
 # Skillgap
+
 ---
 ### Student Number: C22370983
 ### Name: Adam Kerslake Hearst
 ### TU Dublin - TU856/4
-Skillgap is a full-stack web application that helps users identify skill gaps between their CV and a target job description, then recommends relevant courses to help bridge those gaps.
 
-The project is designed as an MVP focused on practical upskilling:
-- upload a CV
-- upload a job description
-- extract entities/skills from both
-- compare them to find missing skills
-- recommend courses from a local catalogue
-- allow users to manually confirm skills they already have but did not include in their CV
+Skillgap is a full-stack web application designed to help users identify skill gaps between their CV and a target job description, then recommend relevant online courses to help address those gaps.
+
+The project was developed as a practical employability and upskilling tool, with a particular focus on ICT-related roles. It allows users to upload a CV and job description, extract and compare relevant entities from both documents, identify missing skills, and receive ranked course recommendations from a curated local course catalogue.
 
 ---
 
 ## Current Project Status
 
-Skillgap is now in a very good presentation state.
+Skillgap is now in a its final state, with both the analytical workflow and the user-facing application working together as a complete system.
 
 Recent improvements include:
-- JWT-based login and authenticated user routes
-- cleaner `/me` and `/analysis` backend route structure
+- JWT-based authentication and protected user routes
+- refined backend route structure for analysis, history, and account features
 - manual confirmed-skills feature with undo support
-- history page for stored gap snapshots
-- export and delete account actions
-- improved dark mode and frontend consistency
-- launcher scripts for easier local startup
+- history page for stored skill-gap snapshots
+- improved results flow and frontend usability
+- cleaner light/dark mode support and UI consistency
+- curated local course catalogue integrated into the recommender
+- ESCO-assisted skill normalisation with caching support
+- local catalogue import support for reproducible recommendation behaviour
 
-The main runnable version of the project is now contained in the **`Skillgap/`** directory.
+The main runnable version of the project is contained in the **`Skillgap/`** directory.
 
-Older backend/frontend versions have been retained in the repository for reference, but previous states of the project can also be recovered through the Git commit history.
+Older backend/frontend versions have been retained in the repository for reference, but previous stages of the project can also be recovered through the Git commit history.
 
 ---
 
 ## Features
 
 ### Core analysis flow
-- Upload CV documents
-- Upload job descriptions
-- Extract skills/entities from both documents
-- Compute missing skills
-- Recommend relevant learning resources
+- Upload CV documents in supported formats
+- Upload or paste a target job description
+- Extract relevant entities and skills from both documents
+- Compare CV and job description content to identify missing skills
+- Recommend relevant courses from a curated local catalogue
+- Refresh recommendations after user confirmation of skills
 
 ### User account features
 - Register and log in securely
 - JWT-based authenticated session handling
-- Change password
-- Export user-linked data
-- Delete account
+- Access protected user-specific analysis features
+- View profile-linked data
+- Manage user account actions
 
 ### Results and refinement
 - View detected missing skills
-- Manually confirm skills already possessed
+- Manually confirm skills already possessed but not present in the CV
 - Undo confirmed skills
-- Refresh recommendations based on adjusted gaps
+- Improve recommendation relevance through adjusted gap results
 
-### Tracking
+### Tracking and persistence
+- Store user-linked gap snapshots
 - View analysis history
-- Store gap snapshots per user
+- Revisit previous analysis results
 
-### UI
+### UI and usability
 - Responsive React frontend
 - Light and dark mode support
-- Cleaner navigation and page consistency
+- Cleaner navigation and improved page consistency
+- Guided and user-friendly results presentation
 
 ---
 
@@ -75,6 +76,8 @@ Older backend/frontend versions have been retained in the repository for referen
 - PostgreSQL
 - Passlib / bcrypt
 - JWT authentication
+- spaCy
+- scikit-learn
 
 ### Frontend
 - React
@@ -82,15 +85,32 @@ Older backend/frontend versions have been retained in the repository for referen
 - Axios
 
 ### Other project elements
-- Entity extraction and text parsing utilities
-- Local course catalogue and ranking logic
-- ESCO-related normalisation utilities
+- Document upload and text extraction utilities
+- Active taxonomy-based entity extraction
+- ESCO-assisted skill normalisation
+- Local course catalogue and recommendation ranking logic
+- Gap snapshot and history storage
+- Docker-based PostgreSQL setup
 
 ---
 
-## Project Structure
+## Recommendation Approach
 
-The main runnable project is inside:
+Skillgap uses a **content-based recommendation approach** rather than relying on live third-party provider APIs at runtime.
+
+The recommendation process is based on:
+- identified missing skills from the CV/job description comparison
+- a curated local course catalogue stored in PostgreSQL
+- course metadata and normalised skill fields
+- similarity-based ranking using direct skill overlap and optional text-based relevance scoring
+
+This approach was chosen to improve reliability, reproducibility, and control over the recommendation process.
+
+---
+
+## Local Course Catalogue
+
+Skillgap uses a processed local JSON catalogue file named:
 
 ```text
-Skillgap/
+course_catalogue.json
