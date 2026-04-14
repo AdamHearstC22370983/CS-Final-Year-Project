@@ -1,9 +1,7 @@
 import courseraLogo from "../assets/images/providers/coursera.png";
 import edxLogo from "../assets/images/providers/edX.png";
-/*providerLogod.js - for placing the correct logo for the provider of each course so that
-the user knows what website they will be going to before visiting the link*/
-
-//function normalises provider values fomr the backend
+/*providerLogod.js - for placing the correct logo for the provider of each course */
+//function normalises provider values from the backend
 export function normaliseProviderName(provider){
     const value = String(provider || "").trim().toLowerCase();
 
@@ -35,6 +33,5 @@ export function getProviderLogo(provider){
     coursera: courseraLogo,
     edx: edxLogo,
   };
-
   return logos[normalised] || null;
 }
