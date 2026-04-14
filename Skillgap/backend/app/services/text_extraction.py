@@ -78,14 +78,15 @@ def clean_extracted_text(raw_text: str) -> str:
 
     return text
 
-def extract_text_from_upload(file: UploadFile, file_bytes: bytes) -> str:
 # High-level function used by FastAPI endpoint.
+def extract_text_from_upload(file: UploadFile, file_bytes: bytes) -> str:
 # Determines file type from filename/content type
 # Routes to the correct extractor while cleaning the file
     filename = file.filename.lower() if file.filename else ""
     content_type = (file.content_type or "").lower()
 
-    # Decide based on extension first
+    # Decide based on extension first, 
+    # if not a valid extension, display error message.
     if filename.endswith(".pdf") or "pdf" in content_type:
         raw_text = extract_pdf_text(file_bytes)
     elif filename.endswith(".docx") or "officedocument" in content_type:

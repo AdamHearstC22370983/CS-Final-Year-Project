@@ -1,25 +1,20 @@
 # entity_extraction.py
 from __future__ import annotations
-
 import json
 import re
 from pathlib import Path
 from functools import lru_cache
 from typing import Dict, List, Any, Tuple
-
 import spacy
 from spacy.matcher import PhraseMatcher
 
-
-# ---- Taxonomy files ----
+# Taxonomy files
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 ACTIVE_TAXONOMY_PATH = DATA_DIR / "skill_taxonomy_it_active.json"
-FULL_TAXONOMY_PATH = DATA_DIR / "skill_taxonomy_it.json"
 
-# PhraseMatcher doesn't need NER/parser, keep it light and fast.
+# PhraseMatcher doesn't need NER/parser
 _nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger", "lemmatizer"])
 
-# ---- Minimal non-skill extraction (optional MVP) ----
 QUALIFICATION_KEYWORDS = [
     "degree", "bachelor", "diploma", "professional certificate",
     "bsc", "higher diploma",
@@ -34,7 +29,7 @@ EXPERIENCE_PATTERNS = [
     r"\bexperience with\b",
 ]
 
-# ---- Main entity extraction function ----
+#  entity extraction function
 def _preprocess_text(text: str) -> str:
     if not text:
         return ""
@@ -44,24 +39,17 @@ def _preprocess_text(text: str) -> str:
 
 # Loads the taxonomy, builds a PhraseMatcher, and extracts entities from text.
 def _load_taxonomy_file() -> Tuple[Path, List[str]]:
-#    Prefer active taxonomy (tightest).
-#    Fall back to full taxonomy if active isn't built yet.
-
     if ACTIVE_TAXONOMY_PATH.exists():
         path = ACTIVE_TAXONOMY_PATH
-    else:
-        path = FULL_TAXONOMY_PATH
 
     if not path.exists():
         raise FileNotFoundError(
             f"No taxonomy file found. Expected either:\n"
             f" - {ACTIVE_TAXONOMY_PATH}\n"
-            f" - {FULL_TAXONOMY_PATH}\n"
-            f"Make sure you generated skill_taxonomy_it.json (and optionally the active version)."
+            f"Make sure you generated skill_taxonomy_it_active.json (and optionally the active version)."
         )
-
     skills = json.loads(path.read_text(encoding="utf-8"))
-    # Lowercase + unique + longest-first helps overlap behaviour (e.g. 'machine learning' before 'learning')
+    #lowercase + unique + longest-first helps overlap behaviour ('machine learning' before 'learning')
     cleaned = sorted({str(s).strip().lower() for s in skills if s and str(s).strip()}, key=len, reverse=True)
     return path, cleaned
 
@@ -114,17 +102,14 @@ def _extract_other_entities(text: str) -> List[Dict[str, str]]:
     return entities
 
 def extract_entities(text: str) -> Dict[str, Any]:
-#      - raw_entities: list of {text,type}
-#      - unique_entities: deduped list
-#      - meta: taxonomy source + counts (useful for debugging / report screenshots)
-
+# Main function to extract entities from job description text.
     taxonomy_path, taxonomy_skills, _ = _get_taxonomy_and_matcher()
-
     dictionary_skills = _extract_dictionary_skills(text)
+    
     raw_entities: List[Dict[str, str]] = [{"text": s, "type": "technical"} for s in dictionary_skills]
-
+    # Add other entity types (qualifications, experience) to the raw entities list.
     raw_entities.extend(_extract_other_entities(text))
-
+    # Deduplicate entities (e.g. if a skill also matches a qualification keyword, we keep both but only once each).
     seen = set()
     unique: List[Dict[str, str]] = []
     for ent in raw_entities:
