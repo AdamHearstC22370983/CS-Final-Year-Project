@@ -1,17 +1,14 @@
 # esco_client.py
 from __future__ import annotations
-
 import json
 from pathlib import Path
 from threading import Lock
 from typing import Optional, Dict, Any
-
 import requests
 
 # ESCO API client for skill search
 # Connects to the official ESCO API and retrieves ICT-only skills.
 ESCO_API_BASE = "https://ec.europa.eu/esco/api"
-
 # Restrict ESCO results to ICT-only groups:
 # 94  - Software development
 # 158 - Computer use (general ICT)
@@ -38,12 +35,12 @@ ICT_GROUPS = ",".join([
     "125", "126", "266", "285", "356", "261"
 ])
 
-# Disk cache so we don't hammer ESCO when normalising large libraries
+# Disk cache so ESCO is queried too heavily when normalising large documents
 # Stored at: app/data/esco_cache.json
 _CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "esco_cache.json"
 _CACHE_LOCK = Lock()
 
-# Reuse connections (faster + nicer to ESCO)
+# Reuse connections
 _SESSION = requests.Session()
 
 # loads a cache dict from disk
@@ -65,11 +62,9 @@ def _save_cache(cache: Dict[str, Any]) -> None:
 
 
 def esco_search_skill(query: str) -> Optional[Dict[str, str]]:
-#    Queries ESCO for ICT-domain skills only.
-#    Returns: {"preferred_label": <string>, "concept_uri": <string>}  OR  None
-#      - Uses a local JSON cache to avoid repeated network calls.
-#      - Cache stores both hits and misses (None) keyed by lowercased query.
-
+# Queries ESCO for ICT-domain skills only.
+# Returns: {"preferred_label": <string>, "concept_uri": <string>}  OR  None
+# Uses a local JSON cache to avoid repeated network calls.
     q = (query or "").strip().lower()
     if not q:
         return None

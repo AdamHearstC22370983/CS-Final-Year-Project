@@ -75,11 +75,9 @@ def _clean_for_taxonomy(raw: str) -> Optional[str]:
 
     return s
 
-
 def normalise_entity(original_entity: str) -> Dict[str, Any]:
 # normalises an entity into a dict with keys via ESCO
     clean = (original_entity or "").strip().lower()
-
     # Manual overrides first
     if clean in MANUAL_OVERRIDES:
         fix = MANUAL_OVERRIDES[clean]
@@ -112,13 +110,7 @@ def normalise_entity(original_entity: str) -> Dict[str, Any]:
     }
 
 def normalise_for_taxonomy(raw_skill: str) -> Optional[Dict[str, Any]]:
-# Taxonomy mode:
-#    - aggressive cleaning for minimising your Kaggle-derived library
-#    - keeps ONLY ICT skills that map via ESCO (or manual overrides)
-#    - returns None if not ICT / not a real skill phrase
-#    Output format is intentionally different from normalise_entity()
-#    because it’s meant for building a mapping + canonical list.
-
+# Normalises a raw skill string to a cleaned version and ESCO mapping if possible.
     cleaned = _clean_for_taxonomy(raw_skill)
     if not cleaned:
         return None
@@ -144,6 +136,5 @@ def normalise_for_taxonomy(raw_skill: str) -> Optional[Dict[str, Any]]:
             "uri": result.get("concept_uri"),
             "source": "ESCO"
         }
-
     # Drop if it doesn't map to ICT ESCO skills
     return None
