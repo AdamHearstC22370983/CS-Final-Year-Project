@@ -2,20 +2,26 @@
 import os
 from datetime import datetime, timedelta, timezone
 
+from dotenv import load_dotenv
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
+
+# load environment variables from backend .env file
+load_dotenv()
 
 # Password hashing context.
 pwd_context = CryptContext(
     schemes=["bcrypt"],
     deprecated="auto",
 )
-
 # JWT config.
-SECRET_KEY = os.getenv("SKILLGAP_SECRET_KEY", "change-this-in-production")
+SECRET_KEY = os.getenv("SKILLGAP_SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("SKILLGAP_SECRET_KEY is not set")
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
 # Hash a plain-text password before storing it.
@@ -29,12 +35,10 @@ def hash_password(password: str) -> str:
         raise ValueError(
             f"Password is too long for bcrypt: {password_bytes} bytes"
         )
-
     return pwd_context.hash(password)
 
-
 # Verify a plain-text password against a stored hash.
-# Return False instead of crashing when legacy/bad password data is encountered.
+# Return False instead of crashing when bad password data is encountered.
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not hashed_password or not isinstance(hashed_password, str):
         return False
@@ -42,7 +46,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return pwd_context.verify(plain_password, hashed_password)
     except UnknownHashError:
-        # Stored password is not a recognised hash format.
+        # False if the stored password is not a recognised hash format.
         return False
     except ValueError:
         # Covers malformed hash strings and similar passlib parsing issues.

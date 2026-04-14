@@ -1,5 +1,4 @@
 # docx_utils.py
-
 # A Utility functions file used to extract text from DOCX files (Word documents).
 # Reads all paragraphs and Joins with newlines
 
@@ -8,8 +7,8 @@ from docx import Document
 
 def extract_docx_text(file_bytes: bytes) -> str:
 # Extracts text from a DOCX file given as raw bytes.
-# :param file_bytes will read the file content from UploadFile.read()
-# :return will output the extracted raw text as a string
+# file_bytes will read the file content from UploadFile.read()
+# return will output the extracted raw text as a string
     docx_file = BytesIO(file_bytes)
     document = Document(docx_file)
 
