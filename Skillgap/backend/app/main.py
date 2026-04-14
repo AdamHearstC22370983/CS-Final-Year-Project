@@ -447,12 +447,40 @@ async def get_user_history(current_user: User = Depends(_get_current_user), db=D
                 "missing_count": len(missing_entities),
             }
         )
-
+    # Return the history list sorted by created_at in descending order with most recent being first.
     return {
         "user_id": current_user.id,
         "username": current_user.username,
         "history": history,
         "history_count": len(history),
+    }
+
+@app.delete("/me/history")
+async def delete_history_snapshot(
+    snapshot_id: int,
+    current_user: User = Depends(_get_current_user),
+    db=Depends(get_db),
+):
+    # Find the snapshot only if it belongs to the signed-in user.
+    snapshot = (
+        db.query(GapSnapshot)
+        .filter(
+            GapSnapshot.id == snapshot_id,
+            GapSnapshot.user_id == current_user.id,
+        )
+        .first()
+    )
+    # Prevent deleting another user's data or deleting something that does not exist.
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="History snapshot not found.")
+
+    # Delete the snapshot and save the change.
+    db.delete(snapshot)
+    db.commit()
+
+    return {
+        "message": "History snapshot deleted successfully.",
+        "deleted_snapshot_id": snapshot_id,
     }
 
 # Export the signed-in user's account-related data.
@@ -964,10 +992,11 @@ async def recommend_courses(
         .order_by(GapSnapshot.created_at.desc())
         .first()
     )
-
+    # If no snapshot is found, return an error message instead of recommendations.
     if not snapshot:
         return {"error": "No gap analysis found. Complete a skill gap test first."}
-
+    # Apply confirmed skill adjustments to the missing entities before ranking courses 
+    # to refresh the missing entity list and ensure recommendations reflect the user's confirmed skills.
     missing = _apply_confirmed_skill_adjustments(
         db, current_user.id, snapshot.missing_entities or []
     )
