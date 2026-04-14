@@ -25,7 +25,7 @@ class Course(Base):
     skills = Column(JSONB, nullable=True)
     skills_norm = Column(JSONB, nullable=True)
 
-    # Quality / popularity signals
+    # Quality signals
     rating = Column(Float, nullable=True)
     nu_reviews = Column(Integer, nullable=True)
     enrollments = Column(Integer, nullable=True)

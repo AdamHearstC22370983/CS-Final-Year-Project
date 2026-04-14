@@ -10,8 +10,6 @@ class MissingEntity(Base):
     __tablename__ = "missing_entities"
 
     id = Column(Integer, primary_key=True)
-
     jd_entity_id = Column(Integer, ForeignKey("jd_entities.id", ondelete="CASCADE"))
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-
     entity_name = Column(String, nullable=False)
